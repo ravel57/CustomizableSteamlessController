@@ -217,6 +217,40 @@ int main() {
               "a Standard trigger never clicks, whatever its haptic setting");
     }
 
+    printf("\nButton mode\n");
+    {
+        TriggerSettings t;
+        t.mode = TriggerMode::Button;
+        t.full = BackButtonBinding::FromAction(BackButtonAction::LeftMouseButton);
+        Check(t.UsesFullPress() && t.SuppressesAnalog(), "a button trigger presses and withholds the analog pull");
+        Check(!Dual().SuppressesAnalog(), "a dual-stage trigger still passes the analog pull through");
+        Check(t.EffectiveFull() == t.full, "a button trigger dispatches its binding");
+        Check(t.ClicksOnPress() && t.ClicksOnRelease(), "a button trigger clicks like a dual-stage one");
+
+        TriggerFullPress d;
+        Check(!d.Update(Raw(50), t), "half a pull is not a click");
+        Check( d.Update(Raw(96), t), "a full pull is");
+        Check( d.Update(Raw(85), t), "easing off keeps it held (hysteresis)");
+        Check(!d.Update(Raw(79), t), "letting go releases it");
+
+        TriggerSettings plain;
+        Check(!plain.UsesFullPress() && !plain.SuppressesAnalog(), "a standard trigger does neither");
+        Check(plain.EffectiveFull() == BackButtonBinding{}, "a standard trigger dispatches nothing");
+
+        Check(TriggerModeFromId("button") == TriggerMode::Button, "'button' reads as Button");
+        Check(std::string(TriggerModeId(TriggerMode::Button)) == "button", "Button writes as 'button'");
+        Check(TriggerModeFromId("dual") == TriggerMode::DualStage, "'dual' still reads as DualStage");
+        Check(TriggerModeFromDword(2) == TriggerMode::Button, "stored 2 is Button");
+        Check(TriggerModeFromDword(3) == TriggerMode::Standard, "a mode from a later build degrades to Standard");
+
+        FakeRegistry reg;
+        auto write = [&](const wchar_t* n, uint32_t v) { reg.Write(n, v); };
+        auto read  = [&](const wchar_t* n, uint32_t def) { return reg.Read(n, def); };
+        WriteTriggerSettings(L"LeftTrigger", t, write);
+        const TriggerSettings back = ReadTriggerSettings(L"LeftTrigger", read);
+        Check(back == t, "a button trigger survives the registry round trip");
+    }
+
     printf("\n%s (%d failure(s))\n", g_failures ? "FAILED" : "All checks passed", g_failures);
     return g_failures ? 1 : 0;
 }

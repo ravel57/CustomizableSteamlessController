@@ -21,6 +21,11 @@ enum class BackButtonAction : uint8_t {
     // None (see Unpack) on a build that predates it rather than as some other
     // action that happened to take the value.
     TouchKeyboard,
+    // The Steam button, which is the pad's Guide (X360) or PS (DS4) button.
+    // Appended for the same reason as TouchKeyboard. It exists so the Steam
+    // button can be given a binding and later put back: a button's "default" is
+    // the gamepad action it always was, and this is that action's name.
+    Guide,
     COUNT
 };
 
@@ -32,7 +37,7 @@ inline const char* BackButtonActionId(BackButtonAction a) {
         "Up","Down","Left","Right",
         "leftMouse","rightMouse",
         "none","menu","view","L3","R3",
-        "touchKeyboard"
+        "touchKeyboard","guide"
     };
     auto i = static_cast<size_t>(a);
     return i < static_cast<size_t>(BackButtonAction::COUNT) ? ids[i] : "none";
@@ -58,6 +63,7 @@ inline BackButtonAction BackButtonActionFromId(const std::string& id) {
     if (id == "L3")         return BackButtonAction::L3;
     if (id == "R3")         return BackButtonAction::R3;
     if (id == "touchKeyboard") return BackButtonAction::TouchKeyboard;
+    if (id == "guide")      return BackButtonAction::Guide;
     return BackButtonAction::None;
 }
 

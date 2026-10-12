@@ -49,6 +49,7 @@ static void ApplyBackActionX360(const BackButtonBinding& binding, XUSB_REPORT& r
     case BackButtonAction::View:      r.wButtons |= XUSB_GAMEPAD_BACK;           break;
     case BackButtonAction::L3:        r.wButtons |= XUSB_GAMEPAD_LEFT_THUMB;     break;
     case BackButtonAction::R3:        r.wButtons |= XUSB_GAMEPAD_RIGHT_THUMB;    break;
+    case BackButtonAction::Guide:     r.wButtons |= XUSB_GAMEPAD_GUIDE;          break;
     case BackButtonAction::None:
     case BackButtonAction::LeftMouseButton:
     case BackButtonAction::RightMouseButton:
@@ -300,8 +301,8 @@ void VirtualController::Update(const uint8_t* buf, size_t n,
     const BackButtonConfig& backCfg = profile.back;
 
     // Calls `apply` once for every trackpad binding the pads are currently
-    // pressing — and every dual-stage trigger's full press — so the two report
-    // paths below only have to say how one binding
+    // pressing, every trigger's full press and every remapped button that is held
+    // — so the two report paths below only have to say how one binding
     // reaches their own report format. Nothing here is read from the report:
     // the tap, the press and its zone, and the directions were all resolved by
     // ControllerManager and arrive in `resolved`, so both delivery paths and
@@ -336,6 +337,14 @@ void VirtualController::Update(const uint8_t* buf, size_t n,
         // maximum, which is where it already is.
         if (resolved.leftTriggerFull)  apply(profile.leftTrigger.EffectiveFull());
         if (resolved.rightTriggerFull) apply(profile.rightTrigger.EffectiveFull());
+
+        // A remapped button. The report handed to this function already has its
+        // own bit cleared — see ControllerManager — so a button bound to another
+        // gamepad action is delivered here and nowhere else, and one bound to a
+        // key or a mouse button is not delivered by this path at all.
+        for (size_t i = 0; i < kPadButtonCount; ++i)
+            if (resolved.buttonsDown & (1u << i))
+                apply(profile.buttons.Effective(static_cast<PadButton>(i)));
     };
 
     if (m_platform == ControllerPlatform::PlayStation) {
@@ -412,6 +421,7 @@ void VirtualController::Update(const uint8_t* buf, size_t n,
                 case BackButtonAction::View:      r.wButtons |= DS4_BUTTON_SHARE;          break;
                 case BackButtonAction::L3:        r.wButtons |= DS4_BUTTON_THUMB_LEFT;     break;
                 case BackButtonAction::R3:        r.wButtons |= DS4_BUTTON_THUMB_RIGHT;    break;
+                case BackButtonAction::Guide:     r.bSpecial |= DS4_SPECIAL_BUTTON_PS;     break;
                 default: break;
                 }
             };

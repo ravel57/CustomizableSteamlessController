@@ -800,6 +800,161 @@ int RunChecks() {
               "the default sits inside the range");
     }
 
+    printf("\nGlide strength clamping\n");
+    {
+        // Same shape as scroll speed's own test, and for the same reason:
+        // zero is what every profile saved before this setting existed reads
+        // back as, and has to mean "unset" rather than "no glide at all".
+        Check(GlideStrengthFromDword(0) == kGlideStrengthDefault,
+              "an absent value is the default, not zero");
+        Check(GlideStrengthFromDword(100) == 100, "a normal value is kept");
+        Check(GlideStrengthFromDword(kGlideStrengthMin) == kGlideStrengthMin,
+              "the minimum is kept");
+        Check(GlideStrengthFromDword(kGlideStrengthMax) == kGlideStrengthMax,
+              "the maximum is kept");
+        Check(GlideStrengthFromDword(1) == kGlideStrengthMin,
+              "below the minimum clamps up");
+        Check(GlideStrengthFromDword(99999) == kGlideStrengthMax,
+              "above the maximum clamps down");
+        Check(GlideStrengthFromDword(0xFFFFFFFFu) == kGlideStrengthMax,
+              "a nonsense DWORD clamps rather than wrapping");
+        Check(kGlideStrengthMin <= kGlideStrengthDefault
+                  && kGlideStrengthDefault <= kGlideStrengthMax,
+              "the default sits inside the range");
+    }
+
+    printf("\nPointer speed clamping\n");
+    {
+        // Same shape as scroll speed's and glide strength's own tests.
+        Check(PointerSpeedFromDword(0) == kPointerSpeedDefault,
+              "an absent value is the default, not zero");
+        Check(PointerSpeedFromDword(100) == 100, "a normal value is kept");
+        Check(PointerSpeedFromDword(kPointerSpeedMin) == kPointerSpeedMin,
+              "the minimum is kept");
+        Check(PointerSpeedFromDword(kPointerSpeedMax) == kPointerSpeedMax,
+              "the maximum is kept");
+        Check(PointerSpeedFromDword(1) == kPointerSpeedMin,
+              "below the minimum clamps up");
+        Check(PointerSpeedFromDword(99999) == kPointerSpeedMax,
+              "above the maximum clamps down");
+        Check(PointerSpeedFromDword(0xFFFFFFFFu) == kPointerSpeedMax,
+              "a nonsense DWORD clamps rather than wrapping");
+        Check(kPointerSpeedMin <= kPointerSpeedDefault
+                  && kPointerSpeedDefault <= kPointerSpeedMax,
+              "the default sits inside the range");
+    }
+
+    printf("\nPointer dead zone clamping\n");
+    {
+        Check(PointerDeadzoneFromDword(0) == kPointerDeadzoneDefault,
+              "an absent value is the default, not zero");
+        Check(PointerDeadzoneFromDword(400) == 400, "a normal value is kept");
+        Check(PointerDeadzoneFromDword(kPointerDeadzoneMin) == kPointerDeadzoneMin,
+              "the minimum is kept");
+        Check(PointerDeadzoneFromDword(kPointerDeadzoneMax) == kPointerDeadzoneMax,
+              "the maximum is kept");
+        Check(PointerDeadzoneFromDword(1) == kPointerDeadzoneMin,
+              "below the minimum clamps up");
+        Check(PointerDeadzoneFromDword(99999) == kPointerDeadzoneMax,
+              "above the maximum clamps down");
+        Check(PointerDeadzoneFromDword(0xFFFFFFFFu) == kPointerDeadzoneMax,
+              "a nonsense DWORD clamps rather than wrapping");
+        Check(kPointerDeadzoneMin <= kPointerDeadzoneDefault
+                  && kPointerDeadzoneDefault <= kPointerDeadzoneMax,
+              "the default sits inside the range");
+    }
+
+    printf("\nScroll acceleration strength clamping\n");
+    {
+        Check(ScrollAccelFromDword(0) == kScrollAccelDefault,
+              "an absent value is the default, not zero");
+        Check(ScrollAccelFromDword(100) == 100, "a normal value is kept");
+        Check(ScrollAccelFromDword(kScrollAccelMin) == kScrollAccelMin,
+              "the minimum is kept");
+        Check(ScrollAccelFromDword(kScrollAccelMax) == kScrollAccelMax,
+              "the maximum is kept");
+        Check(ScrollAccelFromDword(1) == kScrollAccelMin,
+              "below the minimum clamps up");
+        Check(ScrollAccelFromDword(99999) == kScrollAccelMax,
+              "above the maximum clamps down");
+        Check(ScrollAccelFromDword(0xFFFFFFFFu) == kScrollAccelMax,
+              "a nonsense DWORD clamps rather than wrapping");
+        Check(kScrollAccelMin <= kScrollAccelDefault
+                  && kScrollAccelDefault <= kScrollAccelMax,
+              "the default sits inside the range");
+    }
+
+    printf("\nPointer acceleration strength clamping\n");
+    {
+        Check(PointerAccelFromDword(0) == kPointerAccelDefault,
+              "an absent value is the default, not zero");
+        Check(PointerAccelFromDword(100) == 100, "a normal value is kept");
+        Check(PointerAccelFromDword(kPointerAccelMin) == kPointerAccelMin,
+              "the minimum is kept");
+        Check(PointerAccelFromDword(kPointerAccelMax) == kPointerAccelMax,
+              "the maximum is kept");
+        Check(PointerAccelFromDword(1) == kPointerAccelMin,
+              "below the minimum clamps up");
+        Check(PointerAccelFromDword(99999) == kPointerAccelMax,
+              "above the maximum clamps down");
+        Check(PointerAccelFromDword(0xFFFFFFFFu) == kPointerAccelMax,
+              "a nonsense DWORD clamps rather than wrapping");
+        Check(kPointerAccelMin <= kPointerAccelDefault
+                  && kPointerAccelDefault <= kPointerAccelMax,
+              "the default sits inside the range");
+    }
+
+    printf("\nButton combo (chord) members\n");
+    {
+        // The whole point of ChordMember's layout: a button-kind member
+        // recovers the exact PadButton it names, in PadButton's own order —
+        // this is what every chord's suppression logic in ControllerManager
+        // relies on to go from one enum to the other without a second table
+        // that could drift out of step with it.
+        PadButton pb;
+        Check(ChordMemberToPadButton(ChordMember::BtnA, pb) && pb == PadButton::A,
+              "BtnA recovers PadButton::A");
+        Check(ChordMemberToPadButton(ChordMember::BtnSteam, pb) && pb == PadButton::Steam,
+              "BtnSteam (the last button member) recovers PadButton::Steam (the last button)");
+        Check(ChordMemberToPadButton(ChordMember::BtnL3, pb) && pb == PadButton::L3,
+              "a member in the middle of the run recovers the matching button");
+        Check(!ChordMemberToPadButton(ChordMember::None, pb),
+              "None is not a button member");
+        Check(!ChordMemberToPadButton(ChordMember::PaddleL4, pb),
+              "a paddle is not a button member");
+        Check(!ChordMemberToPadButton(ChordMember::LeftPadClick, pb),
+              "a pad click is not a button member");
+
+        // Id/FromId round-trip for every member, including the ones that are
+        // not button-kind — the wire format a saved profile and the page both
+        // depend on.
+        bool allRoundTrip = true;
+        for (uint32_t v = 1; v < static_cast<uint32_t>(ChordMember::COUNT); ++v) {
+            const auto m = static_cast<ChordMember>(v);
+            if (ChordMemberFromId(ChordMemberId(m)) != m) allRoundTrip = false;
+        }
+        Check(allRoundTrip, "every member's wire id reads back as itself");
+        Check(ChordMemberFromId("not a real id") == ChordMember::None,
+              "an unrecognised id is None, not a crash into member 1");
+        Check(ChordMemberFromDword(0) == ChordMember::None,
+              "dword 0 is None");
+        Check(ChordMemberFromDword(0xFFFFFFFFu) == ChordMember::None,
+              "a nonsense dword is None rather than reading out of range");
+
+        // IsConfigured: both members chosen, distinct, and an action actually
+        // bound — anything less must not start suppressing two inputs that
+        // were never meant to form a combo at all.
+        ChordBinding c;
+        Check(!c.IsConfigured(), "a freshly default-constructed slot is unconfigured");
+        c.a = ChordMember::BtnL3;
+        c.b = ChordMember::BtnR3;
+        Check(!c.IsConfigured(), "two members with no action bound is still unconfigured");
+        c.action = BackButtonBinding::FromAction(BackButtonAction::TouchKeyboard);
+        Check(c.IsConfigured(), "two distinct members plus a real action is configured");
+        c.b = ChordMember::BtnL3;
+        Check(!c.IsConfigured(), "the same member on both sides never counts as a combo");
+    }
+
     // Scroll normalisation (#95). A machine's lines-per-notch setting
     // multiplies every wheel event we send, so identical injection scrolls a
     // different distance on two machines — which is how a scroll-is-far-too-

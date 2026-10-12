@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <string>
 #include "BackButtonConfig.h"
+#include "ButtonConfig.h"
+#include "ChordConfig.h"
 #include "ControllerPlatform.h"
 #include "TriggerConfig.h"
 
@@ -75,6 +77,32 @@ inline ScrollDirection ScrollDirectionFromDword(uint32_t v) {
          : ScrollDirection::Natural;
 }
 
+// How a pad in scroll mode turns finger movement into scrolling.
+//
+// Swipe drags the content along with the finger, a touchscreen. Rotary is what
+// Steam's own scroll-wheel pad does: circle the middle of the pad like turning a
+// wheel and the page scrolls by how far round the thumb has gone, so a long
+// scroll is one lazy circle instead of a string of swipes.
+//
+// Values are stable — persisted as DWORDs. Swipe is 0, which is what every
+// profile written before this existed reads back as: those pads scrolled by
+// swiping, and must keep doing so rather than change under their owners.
+enum class ScrollStyle : uint8_t { Swipe = 0, Rotary = 1, COUNT };
+
+inline const char* ScrollStyleId(ScrollStyle s) {
+    return s == ScrollStyle::Rotary ? "rotary" : "swipe";
+}
+
+inline ScrollStyle ScrollStyleFromId(const std::string& id) {
+    return id == "rotary" ? ScrollStyle::Rotary : ScrollStyle::Swipe;
+}
+
+inline ScrollStyle ScrollStyleFromDword(uint32_t v) {
+    return v < static_cast<uint32_t>(ScrollStyle::COUNT)
+         ? static_cast<ScrollStyle>(v)
+         : ScrollStyle::Swipe;
+}
+
 // How fast a pad in scroll mode scrolls, as a percentage of the built-in
 // scale. A taste setting: kCalibratedWheelLines in InputInjection.h already
 // makes a given swipe scroll the same distance on every machine, and this is
@@ -95,6 +123,160 @@ inline constexpr uint32_t ClampScrollSpeed(uint32_t v) {
 
 inline uint32_t ScrollSpeedFromDword(uint32_t v) {
     return v == 0 ? kScrollSpeedDefault : ClampScrollSpeed(v);
+}
+
+// How strongly a pad in MousePointer mode keeps the cursor moving after a
+// fast swipe lifts — the trackball-style glide. A percentage of the built-in
+// feel, the same shape as the scroll speed above and for the same reason:
+// 100% means a fixed, calibrated amount of coast rather than "whatever felt
+// right while testing this", and it is what remains for people who want more
+// or less of it once that amount is picked.
+//
+// The default is a third of the glide's first cut — tuned against a controller
+// at hand, strong flicks coasted further than intended, roughly an
+// air-hockey-puck amount of travel rather than "a little more roll". 33 is
+// that amount's own default scaled down by that same factor, so a profile
+// left at 100% today gets the toned-down feel rather than the original one.
+//
+// Stored as a DWORD, so 0 is what every profile written before this setting
+// existed reads back as — which has to mean "unset", not "glide disabled
+// entirely". GlideStrengthFromDword maps it to the default rather than
+// clamping it up, same as ScrollSpeedFromDword.
+inline constexpr uint32_t kGlideStrengthDefault = 33;
+inline constexpr uint32_t kGlideStrengthMin     = 10;
+inline constexpr uint32_t kGlideStrengthMax     = 300;
+
+inline constexpr uint32_t ClampGlideStrength(uint32_t v) {
+    if (v < kGlideStrengthMin) return kGlideStrengthMin;
+    if (v > kGlideStrengthMax) return kGlideStrengthMax;
+    return v;
+}
+
+inline uint32_t GlideStrengthFromDword(uint32_t v) {
+    return v == 0 ? kGlideStrengthDefault : ClampGlideStrength(v);
+}
+
+// How fast a pad in MousePointer mode moves the cursor, as a percentage of
+// the built-in feel — same shape as scroll speed and glide strength, for the
+// same reason: 100% is a fixed, calibrated pace rather than "whatever this
+// build happened to ship with", and this is what remains for people who want
+// a different one.
+//
+// The calibrated pace itself (TrackpadInput::POINTER_SENSITIVITY) is 1.5x
+// slower than the fixed constant every build before this setting existed
+// used, by request — the old pace turned a full pad swipe into more cursor
+// travel than was wanted. 100% here is that new, slower pace, not the old
+// one: a profile left at 100% gets the toned-down speed, the same way
+// kGlideStrengthDefault made 100% the toned-down glide rather than its own
+// first cut.
+//
+// Stored as a DWORD, so 0 is what every profile written before this setting
+// existed reads back as — which has to mean "unset", not "the cursor does not
+// move". PointerSpeedFromDword maps it to the default rather than clamping it
+// up, same as ScrollSpeedFromDword.
+inline constexpr uint32_t kPointerSpeedDefault = 100;
+inline constexpr uint32_t kPointerSpeedMin     = 10;
+inline constexpr uint32_t kPointerSpeedMax     = 400;
+
+inline constexpr uint32_t ClampPointerSpeed(uint32_t v) {
+    if (v < kPointerSpeedMin) return kPointerSpeedMin;
+    if (v > kPointerSpeedMax) return kPointerSpeedMax;
+    return v;
+}
+
+inline uint32_t PointerSpeedFromDword(uint32_t v) {
+    return v == 0 ? kPointerSpeedDefault : ClampPointerSpeed(v);
+}
+
+// Below this many raw pad units of single-frame movement, a MousePointer pad
+// treats the frame as if the finger had not moved at all, rather than nudging
+// the cursor by it. Exists for one specific complaint: pressing the pad
+// flattens the fingertip and lifting it un-flattens it, and either can slide
+// the contact centroid by a believable few dozen to few hundred units with no
+// finger motion behind it at all — the same settling TrackpadConfig.h already
+// documents for kPadPressArea and the rotary scroll reference reset, just
+// showing up as a position jump here instead of a false click or a phantom
+// turn. Unlike those two, a lift's jump reaches UpdatePointer directly with
+// nothing else in the way, so the cursor visibly hops right as the thumb
+// comes off the pad.
+//
+// A frame suppressed by this is not discarded: see TrackpadInput::Update, which
+// leaves the position reference where it was rather than advancing it, so the
+// suppressed distance is still there on the next frame and a genuinely slow
+// drag still arrives once its accumulated travel clears the threshold. Only a
+// deadzone sized to swallow one-frame settling and then let go behaves this
+// way; one sized to filter continuous jitter would need to discard instead,
+// which would cost slow movement a lot more than one threshold's worth of lag.
+//
+// Stored as a DWORD, so 0 is what every profile written before this setting
+// existed reads back as — which has to mean "unset", not "no dead zone at
+// all". PointerDeadzoneFromDword maps it to the default rather than letting
+// it through as zero, same as every other setting on this pad. The slider's
+// own minimum stop is a small nonzero number for the same reason the scroll
+// and glide ones are not zero — there would be no way to tell "never
+// configured" from "deliberately set to none" on the wire otherwise, and the
+// difference does not matter in practice: a deadzone this small is not worth
+// distinguishing from off.
+inline constexpr uint32_t kPointerDeadzoneDefault = 400;
+inline constexpr uint32_t kPointerDeadzoneMin     = 50;
+inline constexpr uint32_t kPointerDeadzoneMax     = 2000;
+
+inline constexpr uint32_t ClampPointerDeadzone(uint32_t v) {
+    if (v < kPointerDeadzoneMin) return kPointerDeadzoneMin;
+    if (v > kPointerDeadzoneMax) return kPointerDeadzoneMax;
+    return v;
+}
+
+inline uint32_t PointerDeadzoneFromDword(uint32_t v) {
+    return v == 0 ? kPointerDeadzoneDefault : ClampPointerDeadzone(v);
+}
+
+// How strongly a ScrollWheel pad's speed-shaped acceleration actually bites —
+// see TrackpadInput::SpeedAccelFactor. A percentage, the same shape as every
+// other setting on this pad: 0% is the curve switched off entirely (every
+// speed reads as 1x, which is what every build before this feature existed
+// did), 100% is the curve exactly as calibrated, and above that exaggerates
+// it — finer at a slow swipe, faster at a quick one, more so than the
+// calibrated default.
+//
+// Stored as a DWORD, so 0 is what every profile written before this setting
+// existed reads back as — which has to mean "unset", not "off". That is why
+// this cannot use 0 as its own "disabled" value even though 0 is a
+// perfectly meaningful choice here, unlike most of this pad's other
+// percentages: ScrollAccelFromDword maps a stored 0 to the default, and the
+// slider's own minimum stop is a small nonzero number that reads as close
+// enough to off in practice, the same tradeoff kPointerDeadzoneDefault makes.
+inline constexpr uint32_t kScrollAccelDefault = 100;
+inline constexpr uint32_t kScrollAccelMin     = 10;
+inline constexpr uint32_t kScrollAccelMax     = 300;
+
+inline constexpr uint32_t ClampScrollAccel(uint32_t v) {
+    if (v < kScrollAccelMin) return kScrollAccelMin;
+    if (v > kScrollAccelMax) return kScrollAccelMax;
+    return v;
+}
+
+inline uint32_t ScrollAccelFromDword(uint32_t v) {
+    return v == 0 ? kScrollAccelDefault : ClampScrollAccel(v);
+}
+
+// The MousePointer equivalent of kScrollAccelDefault — how strongly the
+// cursor's own speed-shaped acceleration bites: finer than
+// kPointerSpeedDefault's flat pace for a slow, careful drag, faster than it
+// for a quick one. Same shape, same reasoning, same "0 means unset" wrinkle;
+// see kScrollAccelDefault.
+inline constexpr uint32_t kPointerAccelDefault = 100;
+inline constexpr uint32_t kPointerAccelMin     = 10;
+inline constexpr uint32_t kPointerAccelMax     = 300;
+
+inline constexpr uint32_t ClampPointerAccel(uint32_t v) {
+    if (v < kPointerAccelMin) return kPointerAccelMin;
+    if (v > kPointerAccelMax) return kPointerAccelMax;
+    return v;
+}
+
+inline uint32_t PointerAccelFromDword(uint32_t v) {
+    return v == 0 ? kPointerAccelDefault : ClampPointerAccel(v);
 }
 
 // Whether a directional pad's diagonals press two directions at once (what a
@@ -165,6 +347,13 @@ struct PadDigital {
     // dual-stage.
     bool leftTriggerFull  = false;
     bool rightTriggerFull = false;
+    // The ordinary buttons that are held and have been remapped, one bit per
+    // PadButton. A remapped button is taken out of the report the virtual pad
+    // sees and delivered as its binding instead, which is why it is carried here
+    // — the virtual pad cannot tell "A is held" from the report any more, and
+    // would otherwise have no way to deliver a button bound to a different
+    // gamepad action. An unremapped button never appears here.
+    uint32_t buttonsDown = 0;
 };
 
 // Where a click landed on a pad, which is what keeps a directional pad's three
@@ -236,8 +425,20 @@ inline constexpr int kPadPressFrames = 2;
 struct TrackpadSettings {
     TrackpadMode      mode      = TrackpadMode::None;
     ScrollDirection   scrollDir = ScrollDirection::Natural;
+    // ScrollWheel only. For Rotary, Natural means clockwise scrolls down.
+    ScrollStyle       scrollStyle = ScrollStyle::Swipe;
     // ScrollWheel only, as a percentage — see kScrollSpeedDefault.
     uint32_t          scrollSpeed = kScrollSpeedDefault;
+    // ScrollWheel only, as a percentage — see kScrollAccelDefault.
+    uint32_t          scrollAccel = kScrollAccelDefault;
+    // MousePointer only, as a percentage — see kGlideStrengthDefault.
+    uint32_t          glideStrength = kGlideStrengthDefault;
+    // MousePointer only, as a percentage — see kPointerSpeedDefault.
+    uint32_t          pointerSpeed = kPointerSpeedDefault;
+    // MousePointer only, as a percentage — see kPointerAccelDefault.
+    uint32_t          pointerAccel = kPointerAccelDefault;
+    // MousePointer only, in raw pad units — see kPointerDeadzoneDefault.
+    uint32_t          pointerDeadzone = kPointerDeadzoneDefault;
     BackButtonBinding click     = BackButtonBinding::FromAction(BackButtonAction::None);
     // Fires while a finger rests on the pad, whatever the pad's mode is doing
     // with movement. Deliberately not zoned like the click: touch and click
@@ -256,7 +457,13 @@ struct TrackpadSettings {
 
     bool operator==(const TrackpadSettings& o) const {
         return mode == o.mode && scrollDir == o.scrollDir && click == o.click
+            && scrollStyle == o.scrollStyle
             && scrollSpeed == o.scrollSpeed
+            && scrollAccel == o.scrollAccel
+            && glideStrength == o.glideStrength
+            && pointerSpeed == o.pointerSpeed
+            && pointerAccel == o.pointerAccel
+            && pointerDeadzone == o.pointerDeadzone
             && touch == o.touch && up == o.up && down == o.down
             && left == o.left && right == o.right && diagonals == o.diagonals;
     }
@@ -317,9 +524,16 @@ struct TrackpadSettings {
 // The two pads deliberately start out different, which is why these defaults
 // live here rather than on TrackpadSettings (one struct, one default, no way
 // to say "left scrolls, right points"). Out of the box the controller is a
-// usable desktop pointing device: right pad moves the cursor and clicks, left
-// pad scrolls. "Reset this profile to default" in the UI restores exactly
-// this — keep the two in step.
+// usable desktop pointing device, laid out the way Steam lays out its desktop
+// configuration: right pad moves the cursor and left-clicks, left pad scrolls by
+// circling and right-clicks. "Reset this profile to default" in the UI restores
+// exactly this — keep the two in step.
+//
+// The buttons and triggers are deliberately NOT laid out for the desktop here:
+// they start as the gamepad they have always been, because a profile with no game
+// of its own governs every game, and a game with A bound to Enter and its
+// triggers turned into mouse buttons is not playable. The window's "Steam desktop
+// layout" button applies the desktop version of those in one click.
 struct ControllerProfile {
     // The game's name as the picker showed it, carried so anything that has
     // to talk about this profile later can name it. Profile ids are exe
@@ -355,10 +569,13 @@ struct ControllerProfile {
     // as a controller unplug and replug.
     ControllerPlatform platform = ControllerPlatform::Xbox;
     BackButtonConfig back;
+    // What each of the ordinary buttons does. Each starts as itself.
+    ButtonConfig buttons;
     TrackpadSettings leftPad{
-        .mode      = TrackpadMode::ScrollWheel,
-        .scrollDir = ScrollDirection::Natural,
-        .click     = BackButtonBinding::FromAction(BackButtonAction::None),
+        .mode        = TrackpadMode::ScrollWheel,
+        .scrollDir   = ScrollDirection::Natural,
+        .scrollStyle = ScrollStyle::Rotary,
+        .click       = BackButtonBinding::FromAction(BackButtonAction::RightMouseButton),
     };
     TrackpadSettings rightPad{
         .mode      = TrackpadMode::MousePointer,
@@ -371,13 +588,30 @@ struct ControllerProfile {
     TriggerSettings leftTrigger;
     TriggerSettings rightTrigger;
 
+    // Button combos — see ChordConfig.h. The first two match Steam's own
+    // defaults: both pad clicks middle-click, both stick clicks open the
+    // on-screen keyboard. The rest start empty, for whatever combos someone
+    // wants of their own. Keep this in step with RemapWindow's "Steam desktop
+    // layout" preset if that one ever starts touching combos too.
+    ChordBinding chords[kChordSlotCount] = {
+        { ChordMember::LeftPadClick, ChordMember::RightPadClick,
+          BackButtonBinding::FromMouseButton(BackButtonBinding::MouseButtonCode::Middle) },
+        { ChordMember::BtnL3, ChordMember::BtnR3,
+          BackButtonBinding::FromAction(BackButtonAction::TouchKeyboard) },
+    };
+
     bool operator==(const ControllerProfile& o) const {
-        return useDefaultMappings == o.useDefaultMappings
-            && platform == o.platform
-            && back.l4 == o.back.l4 && back.l5 == o.back.l5
-            && back.r4 == o.back.r4 && back.r5 == o.back.r5
-            && leftPad == o.leftPad && rightPad == o.rightPad
-            && leftTrigger == o.leftTrigger && rightTrigger == o.rightTrigger;
+        if (useDefaultMappings != o.useDefaultMappings
+                || platform != o.platform
+                || back.l4 != o.back.l4 || back.l5 != o.back.l5
+                || back.r4 != o.back.r4 || back.r5 != o.back.r5
+                || buttons != o.buttons
+                || leftPad != o.leftPad || rightPad != o.rightPad
+                || leftTrigger != o.leftTrigger || rightTrigger != o.rightTrigger)
+            return false;
+        for (size_t i = 0; i < kChordSlotCount; ++i)
+            if (chords[i] != o.chords[i]) return false;
+        return true;
     }
     bool operator!=(const ControllerProfile& o) const { return !(*this == o); }
 };

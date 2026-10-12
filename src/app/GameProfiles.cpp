@@ -51,8 +51,21 @@ void ReadPad(HKEY key, const wchar_t* prefix, TrackpadSettings& pad) {
     pad.mode      = TrackpadModeFromDword(ReadDw(key, name(L"Mode").c_str(), 0));
     pad.click     = binding(L"Click", BackButtonAction::None);
     pad.scrollDir = ScrollDirectionFromDword(ReadDw(key, name(L"ScrollDir").c_str(), 0));
+    // Absent means Swipe: a profile saved before circular scrolling existed
+    // scrolled by swiping, and keeps doing so.
+    pad.scrollStyle = ScrollStyleFromDword(ReadDw(key, name(L"ScrollStyle").c_str(), 0));
     // Zero means absent, which ScrollSpeedFromDword reads as the default.
     pad.scrollSpeed = ScrollSpeedFromDword(ReadDw(key, name(L"ScrollSpeed").c_str(), 0));
+    // Zero means absent, which ScrollAccelFromDword reads as the default.
+    pad.scrollAccel = ScrollAccelFromDword(ReadDw(key, name(L"ScrollAccel").c_str(), 0));
+    // Zero means absent, which GlideStrengthFromDword reads as the default.
+    pad.glideStrength = GlideStrengthFromDword(ReadDw(key, name(L"GlideStrength").c_str(), 0));
+    // Zero means absent, which PointerSpeedFromDword reads as the default.
+    pad.pointerSpeed = PointerSpeedFromDword(ReadDw(key, name(L"PointerSpeed").c_str(), 0));
+    // Zero means absent, which PointerAccelFromDword reads as the default.
+    pad.pointerAccel = PointerAccelFromDword(ReadDw(key, name(L"PointerAccel").c_str(), 0));
+    // Zero means absent, which PointerDeadzoneFromDword reads as the default.
+    pad.pointerDeadzone = PointerDeadzoneFromDword(ReadDw(key, name(L"PointerDeadzone").c_str(), 0));
     // Absent from every profile written before the directional modes existed.
     // The defaults match TrackpadSettings' own, so those profiles read back as
     // an unconfigured directional pad rather than a broken one.
@@ -70,7 +83,13 @@ void WritePad(HKEY key, const wchar_t* prefix, const TrackpadSettings& pad) {
     WriteDw(key, name(L"Mode").c_str(),      static_cast<DWORD>(pad.mode));
     WriteDw(key, name(L"Click").c_str(),     pad.click.Pack());
     WriteDw(key, name(L"ScrollDir").c_str(), static_cast<DWORD>(pad.scrollDir));
+    WriteDw(key, name(L"ScrollStyle").c_str(), static_cast<DWORD>(pad.scrollStyle));
     WriteDw(key, name(L"ScrollSpeed").c_str(), pad.scrollSpeed);
+    WriteDw(key, name(L"ScrollAccel").c_str(), pad.scrollAccel);
+    WriteDw(key, name(L"GlideStrength").c_str(), pad.glideStrength);
+    WriteDw(key, name(L"PointerSpeed").c_str(), pad.pointerSpeed);
+    WriteDw(key, name(L"PointerAccel").c_str(), pad.pointerAccel);
+    WriteDw(key, name(L"PointerDeadzone").c_str(), pad.pointerDeadzone);
     WriteDw(key, name(L"Touch").c_str(),     pad.touch.Pack());
     WriteDw(key, name(L"Up").c_str(),        pad.up.Pack());
     WriteDw(key, name(L"Down").c_str(),      pad.down.Pack());
@@ -127,6 +146,15 @@ std::map<std::wstring, ControllerProfile> Load() {
             };
             p.leftTrigger  = ReadTriggerSettings(L"LeftTrigger",  readDw);
             p.rightTrigger = ReadTriggerSettings(L"RightTrigger", readDw);
+            // Absent before buttons were configurable: each is itself.
+            p.buttons      = ReadButtonSettings(readDw);
+            // Absent before combos existed, which reads each slot back as
+            // whatever ControllerProfile's own default for it is — the two
+            // shipped combos for slots 0 and 1, unconfigured for the rest.
+            for (size_t ci = 0; ci < kChordSlotCount; ++ci) {
+                p.chords[ci] = ReadChordBinding(
+                    (L"Chord" + std::to_wstring(ci)).c_str(), p.chords[ci], readDw);
+            }
             profiles[id] = p;
         }
         RegCloseKey(child);
@@ -166,6 +194,10 @@ void Save(const std::map<std::wstring, ControllerProfile>& profiles) {
             auto writeDw = [&](const wchar_t* name, uint32_t v) { WriteDw(child, name, v); };
             WriteTriggerSettings(L"LeftTrigger",  p.leftTrigger,  writeDw);
             WriteTriggerSettings(L"RightTrigger", p.rightTrigger, writeDw);
+            WriteButtonSettings(p.buttons, writeDw);
+            for (size_t ci = 0; ci < kChordSlotCount; ++ci)
+                WriteChordBinding((L"Chord" + std::to_wstring(ci)).c_str(),
+                                  p.chords[ci], writeDw);
             RegCloseKey(child);
         }
         ++i;

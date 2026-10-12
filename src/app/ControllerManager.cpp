@@ -77,9 +77,14 @@ struct ControllerManager::Slot {
     // Indices 0-3 are the paddles (L4, L5, R4, R5); everything after them
     // belongs to the trackpads, which are ordinary bindings dispatched down
     // this same path. 4-5 are the pad clicks, 6-7 the pad touches, and 8-15
-    // the four directions of each pad in turn. 16-17 are the full presses of
-    // the left and right triggers when they are dual-stage.
-    static constexpr size_t kBindableCount = 18;
+    // the four directions of each pad in turn. 16-17 are the presses of the
+    // left and right triggers when they carry a binding. The ordinary buttons
+    // follow, one per PadButton, in that enum's order.
+    // 18-plus-combos: everything the comment above already covers, plus one
+    // more edge per configured combo slot (#chords) appended after the
+    // trigger presses — see the chord evaluation block in the read loop.
+    static constexpr size_t kPaddleEdgeCount = 18 + kChordSlotCount;
+    static constexpr size_t kBindableCount   = kPaddleEdgeCount + kPadButtonCount;
     BackButtonBinding paddleHeld[kBindableCount];
 
     // What each pad's directions were last frame. Unlike every other edge
@@ -167,8 +172,6 @@ struct ControllerManager::Slot {
     };
     PressState leftPress;
     PressState rightPress;
-    bool prevLeftPressed  = false;
-    bool prevRightPressed = false;
 
     // Whether each trigger is past its full-press point (#75), with the
     // hysteresis that keeps a finger resting near the point from chattering. The
@@ -179,6 +182,34 @@ struct ControllerManager::Slot {
     TriggerFullPress rightTrigger;
     bool prevLeftTriggerFull  = false;
     bool prevRightTriggerFull = false;
+
+    // Button combos (#chords). Which slots were active, and which physical
+    // members were claimed by an active one, last frame — carried for the
+    // same reason every other "previous" field on this slot is: a claimed
+    // member's own edge has to see what it was EFFECTIVELY dispatching last
+    // frame (nothing, while claimed) rather than the raw bit in prevBuf, or a
+    // chord ending mid-hold reads as a release that was never actually sent.
+    // One bit per ChordMember.
+    bool     prevChordActive[kChordSlotCount] = {};
+    uint32_t prevChordClaimedMask = 0;
+
+    // Per-member debounce for a member that takes part in some configured
+    // combo (#135): a fresh press of one is held back from its own action for
+    // a short grace window instead of firing immediately, so a partner
+    // arriving a frame or two later still reads as the two forming a chord
+    // together — rather than the first member's own press having already
+    // gone out, with nothing left to do when the chord claims it a moment
+    // later but send a release that chases it. A member outside every
+    // configured combo skips the window and fires exactly as it always did —
+    // see chordCapable and chordMemberSolo in the read loop. One slot per
+    // ChordMember.
+    static constexpr int kChordGraceFrames = 15;  // ~60ms at 250Hz
+    bool chordMemberRawHeld[static_cast<size_t>(ChordMember::COUNT)]     = {};
+    bool chordMemberPending[static_cast<size_t>(ChordMember::COUNT)]     = {};
+    int  chordMemberGrace[static_cast<size_t>(ChordMember::COUNT)]      = {};
+    bool chordMemberSolo[static_cast<size_t>(ChordMember::COUNT)]       = {};
+    bool prevChordMemberSolo[static_cast<size_t>(ChordMember::COUNT)]  = {};
+
     // Where each trigger is right now (raw 0..0x7FFF), published for the
     // settings window's live meter. Per slot and combined by TriggerLevels, so
     // a second controller sitting idle cannot overwrite the one being pulled.
@@ -317,6 +348,88 @@ static bool DetectCapture(const uint8_t* cur, const uint8_t* prev,
 
     return false;
 }
+
+// ---------------------------------------------------------------------------
+// Ordinary buttons
+//
+// Where each one lives in the state report, in PadButton's order. The same bytes
+// and masks DetectCapture reads, which is the point of having them once: the two
+// cannot disagree about which bit is which button.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct ButtonBit { size_t byteIdx; uint8_t mask; };
+
+constexpr ButtonBit kButtonBits[kPadButtonCount] = {
+    { 2, SteamController::BTN_A },       // A
+    { 2, SteamController::BTN_B },       // B
+    { 2, SteamController::BTN_X },       // X
+    { 2, SteamController::BTN_Y },       // Y
+    { 4, SteamController::BTN_LB },      // LB
+    { 3, SteamController::BTN_RB },      // RB
+    { 3, SteamController::BTN_DPAD_UP }, // DPadUp
+    { 3, SteamController::BTN_DPAD_DN }, // DPadDown
+    { 3, SteamController::BTN_DPAD_LT }, // DPadLeft
+    { 3, SteamController::BTN_DPAD_RT }, // DPadRight
+    { 2, SteamController::BTN_MENU },    // Menu
+    { 3, SteamController::BTN_VIEW },    // View
+    { 3, SteamController::BTN_LS },      // L3
+    { 2, SteamController::BTN_RS },      // R3
+    { 4, SteamController::BTN_STEAM },   // Steam
+};
+
+// A report too short to carry a button's byte reads as not held.
+bool ButtonHeld(const uint8_t* report, size_t n, PadButton b) {
+    const ButtonBit bit = kButtonBits[static_cast<size_t>(b)];
+    return bit.byteIdx < n && (report[bit.byteIdx] & bit.mask) != 0;
+}
+
+// Whether a chord claimed member `m` in `mask` — one bit per ChordMember,
+// set by the combo-evaluation block in the read loop below.
+bool IsChordClaimed(uint32_t mask, ChordMember m) {
+    return (mask & (1u << static_cast<uint32_t>(m))) != 0;
+}
+
+// Turns `report` into what the virtual pad should see, and returns which
+// remapped buttons are held, one bit per PadButton.
+//
+// A remapped button is cleared out of the report rather than left in alongside
+// its binding: A bound to Enter must not also be a gamepad A, and A bound to
+// another gamepad action must be that action and not both. An unremapped button
+// is left exactly as it was, which is how a profile that touches nothing behaves
+// as it always did.
+//
+// A button claimed by an active combo is cleared the same way, remapped or
+// not: Steam's own "click both sticks" does not also report L3+R3 to the game
+// while the keyboard it opens is up, and this is what makes that true here —
+// without it, an unremapped L3/R3 would sail straight through to the virtual
+// pad alongside the combo's own action.
+//
+// A trigger in Button mode is likewise zeroed. Its pull still reaches the press
+// detector, which reads the original report; only the virtual pad is spared an
+// analog value the user has said this trigger does not have.
+uint32_t ApplyButtonRemap(uint8_t* report, size_t n, const ControllerProfile& profile,
+                          uint32_t chordClaimedMask) {
+    uint32_t held = 0;
+    for (size_t i = 0; i < kPadButtonCount; ++i) {
+        const auto b = static_cast<PadButton>(i);
+        const bool remapped = profile.buttons.IsRemapped(b);
+        const bool claimed = IsChordClaimed(chordClaimedMask,
+            static_cast<ChordMember>(static_cast<uint32_t>(ChordMember::BtnA) + i));
+        if (!remapped && !claimed) continue;
+        if (remapped && ButtonHeld(report, n, b)) held |= 1u << i;
+        const ButtonBit bit = kButtonBits[i];
+        if (bit.byteIdx < n) report[bit.byteIdx] &= static_cast<uint8_t>(~bit.mask);
+    }
+    if (n >= 10) {
+        if (profile.leftTrigger.SuppressesAnalog())  report[6] = report[7] = 0;
+        if (profile.rightTrigger.SuppressesAnalog()) report[8] = report[9] = 0;
+    }
+    return held;
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // Crash-path lizard restore
@@ -595,7 +708,14 @@ std::vector<std::wstring> ControllerManager::UnheldDockPaths() const {
 // not a second thing to multiply by.
 static std::string DescribePad(const TrackpadSettings& pad) {
     switch (pad.mode) {
-    case TrackpadMode::MousePointer:   return "pointer";
+    case TrackpadMode::MousePointer: {
+        char buf[128];
+        snprintf(buf, sizeof(buf),
+                 "pointer (speed %u%%, accel %u%%, glide %u%%, deadzone %u)",
+                 pad.pointerSpeed, pad.pointerAccel, pad.glideStrength,
+                 pad.pointerDeadzone);
+        return buf;
+    }
     case TrackpadMode::DS4Touchpad:    return "ds4 touchpad";
     case TrackpadMode::SingleButton:   return "single button";
     case TrackpadMode::DirectionalPad:
@@ -606,17 +726,21 @@ static std::string DescribePad(const TrackpadSettings& pad) {
             InputInjection::WheelCorrection(InputInjection::WheelLinesPerNotch());
         const char* dir = pad.scrollDir == ScrollDirection::Reversed ? "reversed"
                                                                     : "natural";
-        char buf[160];
+        const char* style = ScrollStyleId(pad.scrollStyle);
+        char buf[220];
         // Nothing to explain on a machine left at the Windows default, where
         // the correction is 1.0 and printing it only invites the question of
         // what to multiply by.
         if (std::fabs(correction - 1.0f) < 0.005f)
-            snprintf(buf, sizeof(buf), "scroll (%s, speed %u%% of calibrated)",
-                     dir, pad.scrollSpeed);
+            snprintf(buf, sizeof(buf),
+                     "scroll (%s, %s, speed %u%% of calibrated, accel %u%%)",
+                     style, dir, pad.scrollSpeed, pad.scrollAccel);
         else
             snprintf(buf, sizeof(buf),
-                     "scroll (%s, speed %u%% of calibrated, wheel correction x%.2f)",
-                     dir, pad.scrollSpeed, static_cast<double>(correction));
+                     "scroll (%s, %s, speed %u%% of calibrated, accel %u%%, "
+                     "wheel correction x%.2f)",
+                     style, dir, pad.scrollSpeed, pad.scrollAccel,
+                     static_cast<double>(correction));
         return buf;
     }
     default: return "none";
@@ -628,23 +752,40 @@ static std::string DescribePad(const TrackpadSettings& pad) {
 // ("key:75", "leftMouse") because that is unambiguous and the log is read by
 // people comparing it against a profile.
 static std::string DescribeTrigger(const TriggerSettings& t) {
-    if (!t.IsDualStage()) return "standard";
+    if (!t.UsesFullPress()) return "standard";
     const char* clicks = t.haptic == TriggerHaptic::Off   ? "no click"
                        : t.haptic == TriggerHaptic::Press ? "click on press"
                                                           : "click on press and release";
     char buf[160];
-    snprintf(buf, sizeof(buf), "dual-stage (press %u%%, release %u%%, full=%s, %s)",
+    snprintf(buf, sizeof(buf), "%s (press %u%%, release %u%%, full=%s, %s)",
+             t.IsButton() ? "button" : "dual-stage",
              ClampTriggerPress(t.press),
              ClampTriggerRelease(t.release, ClampTriggerPress(t.press)),
              t.full.Id().c_str(), clicks);
     return buf;
 }
 
+// The buttons that are not themselves, in the terms a bug report is written in,
+// or "default" when nothing has been remapped. Only the changes are worth a line:
+// fifteen buttons at their defaults would bury the one that was not.
+static std::string DescribeButtons(const ButtonConfig& buttons) {
+    std::string out;
+    for (size_t i = 0; i < kPadButtonCount; ++i) {
+        const auto b = static_cast<PadButton>(i);
+        if (!buttons.IsRemapped(b)) continue;
+        if (!out.empty()) out += ' ';
+        // The wire id minus its prefix, which is the button's name.
+        out += std::string(PadButtonWireId(b)).substr(4) + "=" + buttons.Get(b).Id();
+    }
+    return out.empty() ? "default" : out;
+}
+
 void ControllerManager::LogPadSettings() {
     std::string line = "PADS: left=" + DescribePad(m_profile.leftPad)
                      + " right="     + DescribePad(m_profile.rightPad)
                      + " | TRIGGERS: left="  + DescribeTrigger(m_profile.leftTrigger)
-                     + " right="             + DescribeTrigger(m_profile.rightTrigger);
+                     + " right="             + DescribeTrigger(m_profile.rightTrigger)
+                     + " | BUTTONS: "        + DescribeButtons(m_profile.buttons);
 
     // The failure this exists to make visible: settings changed with game mode
     // off do nothing at all, and until now nothing said so. Two #95 sessions
@@ -666,8 +807,20 @@ void ControllerManager::ApplyPadSettings(Slot& slot) {
     slot.rightPad.SetMode(m_profile.rightPad.mode);
     slot.leftPad.SetScrollDirection(m_profile.leftPad.scrollDir);
     slot.rightPad.SetScrollDirection(m_profile.rightPad.scrollDir);
+    slot.leftPad.SetScrollStyle(m_profile.leftPad.scrollStyle);
+    slot.rightPad.SetScrollStyle(m_profile.rightPad.scrollStyle);
     slot.leftPad.SetScrollSpeed(m_profile.leftPad.scrollSpeed);
     slot.rightPad.SetScrollSpeed(m_profile.rightPad.scrollSpeed);
+    slot.leftPad.SetScrollAccel(m_profile.leftPad.scrollAccel);
+    slot.rightPad.SetScrollAccel(m_profile.rightPad.scrollAccel);
+    slot.leftPad.SetGlideStrength(m_profile.leftPad.glideStrength);
+    slot.rightPad.SetGlideStrength(m_profile.rightPad.glideStrength);
+    slot.leftPad.SetPointerSpeed(m_profile.leftPad.pointerSpeed);
+    slot.rightPad.SetPointerSpeed(m_profile.rightPad.pointerSpeed);
+    slot.leftPad.SetPointerAccel(m_profile.leftPad.pointerAccel);
+    slot.rightPad.SetPointerAccel(m_profile.rightPad.pointerAccel);
+    slot.leftPad.SetPointerDeadzone(m_profile.leftPad.pointerDeadzone);
+    slot.rightPad.SetPointerDeadzone(m_profile.rightPad.pointerDeadzone);
     slot.leftPad.SetDiagonals(m_profile.leftPad.diagonals);
     slot.rightPad.SetDiagonals(m_profile.rightPad.diagonals);
     // The virtual controller reads pad modes straight off the profile it is
@@ -789,6 +942,16 @@ void ControllerManager::ReleaseHeldPaddleInputs(Slot& slot) {
     slot.rightTrigger.Reset();
     slot.prevLeftTriggerFull  = false;
     slot.prevRightTriggerFull = false;
+    // Combos go with it for the same reason: a stale claim or a stale active
+    // flag would otherwise carry into the first frame after restart as if a
+    // combo or a member's release had already happened.
+    for (bool& active : slot.prevChordActive) active = false;
+    slot.prevChordClaimedMask = 0;
+    for (bool& held    : slot.chordMemberRawHeld)     held    = false;
+    for (bool& pending : slot.chordMemberPending)     pending = false;
+    for (int&  grace   : slot.chordMemberGrace)        grace   = 0;
+    for (bool& solo    : slot.chordMemberSolo)         solo    = false;
+    for (bool& solo    : slot.prevChordMemberSolo)     solo    = false;
 }
 
 void ControllerManager::StartButtonCapture(std::function<void(const BackButtonBinding&)> callback) {
@@ -1420,6 +1583,111 @@ void ControllerManager::ReadLoop(Slot* slot) {
         slot->triggerRaw[0].store(leftTriggerRaw,  std::memory_order_relaxed);
         slot->triggerRaw[1].store(rightTriggerRaw, std::memory_order_relaxed);
 
+        // Button combos (#chords): two physical inputs held together claim
+        // both for a third action instead of — not alongside — whatever
+        // either does alone. Evaluated here, ahead of everything else that
+        // reads this frame's buttons, because a claimed one has to be hidden
+        // from the virtual pad exactly like a remapped one is (in
+        // ApplyButtonRemap, right below) and from its own individual
+        // dispatch (down in the edge-dispatch block, which reads
+        // chordClaimedMask and chordActive back out of this scope).
+        bool     chordActive[kChordSlotCount] = {};
+        uint32_t chordClaimedMask = 0;
+        // leftPress/rightPress, not resolved.leftPressed/rightPressed:
+        // resolved does not exist yet, and these are the same answer — see
+        // PadDigital's own leftPressed/rightPressed below. Kept in scope past
+        // the block below, which reuses it for the per-member debounce.
+        auto memberHeld = [&](ChordMember m) -> bool {
+            PadButton pb;
+            if (ChordMemberToPadButton(m, pb)) return ButtonHeld(buf, n, pb);
+            switch (m) {
+            case ChordMember::PaddleL4:
+                return n > 4 && (buf[4] & SteamController::BTN_L4) != 0;
+            case ChordMember::PaddleL5:
+                return n > 4 && (buf[4] & SteamController::BTN_L5) != 0;
+            case ChordMember::PaddleR4:
+                return n > 2 && (buf[2] & SteamController::BTN_R4) != 0;
+            case ChordMember::PaddleR5:
+                return n > 3 && (buf[3] & SteamController::BTN_R5) != 0;
+            case ChordMember::LeftPadClick:  return slot->leftPress.pressed;
+            case ChordMember::RightPadClick: return slot->rightPress.pressed;
+            default: return false;
+            }
+        };
+        // Which members any currently-configured combo could claim — not
+        // just the two shipped ones, a custom slot counts exactly the same.
+        bool chordCapable[static_cast<size_t>(ChordMember::COUNT)] = {};
+        for (size_t ci = 0; ci < kChordSlotCount; ++ci) {
+            const ChordBinding& c = m_profile.chords[ci];
+            if (!c.IsConfigured()) continue;
+            chordActive[ci] = memberHeld(c.a) && memberHeld(c.b);
+            chordCapable[static_cast<size_t>(c.a)] = true;
+            chordCapable[static_cast<size_t>(c.b)] = true;
+            if (chordActive[ci]) {
+                chordClaimedMask |= 1u << static_cast<uint32_t>(c.a);
+                chordClaimedMask |= 1u << static_cast<uint32_t>(c.b);
+            }
+        }
+
+        // Per-member debounce (#135): two inputs pressed "together" by a
+        // human rarely land on the exact same report, so without this a
+        // chord's first member would dispatch its own press a frame or two
+        // early and then have to be released the instant the second member
+        // arrives and the chord claims both — a stray click right alongside
+        // the combo's own action. A chord-capable member therefore holds its
+        // own action back for a short grace window after a fresh press
+        // instead, long enough for a genuinely simultaneous partner to be
+        // recognised as a chord before either member ever fires solo. If no
+        // partner shows up, the member fires solo once the window lapses,
+        // a little later than it would have but otherwise exactly as before.
+        // A member no configured combo could claim is not delayed at all.
+        for (uint32_t v = 1; v < static_cast<uint32_t>(ChordMember::COUNT); ++v) {
+            const auto m = static_cast<ChordMember>(v);
+            const bool raw     = memberHeld(m);
+            const bool claimed = IsChordClaimed(chordClaimedMask, m);
+            bool& rawPrev = slot->chordMemberRawHeld[v];
+            bool& pending = slot->chordMemberPending[v];
+
+            slot->prevChordMemberSolo[v] = slot->chordMemberSolo[v];
+
+            if (!raw || claimed) {
+                // Released, or claimed by an active chord: nothing pending,
+                // nothing solo. A member can be claimed on the very frame it
+                // is first pressed, if its partner was already held — the
+                // grace window only matters for the two arriving apart.
+                pending = false;
+                slot->chordMemberSolo[v] = false;
+            } else if (!chordCapable[v]) {
+                // No configured combo wants this member: behave exactly as
+                // before the combo feature existed.
+                slot->chordMemberSolo[v] = true;
+            } else if (!rawPrev) {
+                // A fresh press of a member some combo could still claim.
+                pending = true;
+                slot->chordMemberGrace[v] = Slot::kChordGraceFrames;
+                slot->chordMemberSolo[v] = false;
+            } else if (pending) {
+                if (--slot->chordMemberGrace[v] <= 0) {
+                    pending = false;
+                    slot->chordMemberSolo[v] = true;
+                }
+                // Else still inside the window: stays unfired this frame.
+            }
+            // Else: held continuously past the window already, unclaimed —
+            // chordMemberSolo keeps whatever it settled to (true).
+
+            rawPrev = raw;
+        }
+
+        // What the virtual pad is shown: the report with every remapped
+        // button, every chord-claimed one, and every button-mode trigger
+        // taken out of it. The original stays intact for everything that
+        // reads the physical state — the edge dispatch below, the paddles,
+        // the capture.
+        uint8_t shown[sizeof(buf)];
+        memcpy(shown, buf, n);
+        const uint32_t buttonsHeld = ApplyButtonRemap(shown, n, m_profile, chordClaimedMask);
+
         const PadDigital resolved{
             slot->leftPad.Directions(),
             slot->rightPad.Directions(),
@@ -1439,8 +1707,9 @@ void ControllerManager::ReadLoop(Slot* slot) {
             slot->rightPress.pressed,
             slot->leftTrigger.Update(leftTriggerRaw,   m_profile.leftTrigger),
             slot->rightTrigger.Update(rightTriggerRaw, m_profile.rightTrigger),
+            buttonsHeld,
         };
-        if (slot->vc) slot->vc->Update(buf, n, m_profile, resolved);
+        if (slot->vc) slot->vc->Update(shown, n, m_profile, resolved);
 
         // The simulated click for a dual-stage trigger. Edge-triggered off the
         // same answer the binding uses, so what is felt and what is sent cannot
@@ -1448,15 +1717,35 @@ void ControllerManager::ReadLoop(Slot* slot) {
         // that one is a baseline, not an event. The send itself is queued to the
         // rumble thread and never blocks here.
         if (hasPrev) {
-            auto triggerClick = [&](bool left, const TriggerSettings& t, bool now, bool prev) {
+            auto triggerClick = [&](bool left, const TriggerSettings& t, bool now, bool prev,
+                                    int raw) {
                 if (now == prev) return;
+                // Diagnostic: names exactly what this transition fired against —
+                // the mode, the press/release points actually in m_profile right
+                // now, their raw thresholds, and the raw value that crossed them —
+                // so "I set it to 63% and it still needs a full pull" can be told
+                // apart from "the 63% never reached the running profile at all"
+                // and from "63% of the raw range genuinely is a near-full pull on
+                // this unit" just by reading the one line it produces.
+                EventLog::Write(
+                    "TRIGGER: %s full=%s mode=%s press=%u%%(raw>=%d) "
+                    "release=%u%%(raw<=%d) raw=%d",
+                    left ? "left" : "right", now ? "down" : "up",
+                    t.mode == TriggerMode::Button ? "button"
+                        : t.mode == TriggerMode::DualStage ? "dual" : "standard",
+                    t.press, TriggerFullPress::RawAt(ClampTriggerPress(t.press)),
+                    t.release,
+                    TriggerFullPress::RawAt(ClampTriggerRelease(t.release, t.press)),
+                    raw);
                 if (now ? t.ClicksOnPress() : t.ClicksOnRelease())
                     slot->sc->QueueTriggerClick(left);
             };
             triggerClick(true,  m_profile.leftTrigger,
-                         resolved.leftTriggerFull,  slot->prevLeftTriggerFull);
+                         resolved.leftTriggerFull,  slot->prevLeftTriggerFull,
+                         leftTriggerRaw);
             triggerClick(false, m_profile.rightTrigger,
-                         resolved.rightTriggerFull, slot->prevRightTriggerFull);
+                         resolved.rightTriggerFull, slot->prevRightTriggerFull,
+                         rightTriggerRaw);
         }
 
         // Trackpad haptics.
@@ -1716,20 +2005,51 @@ void ControllerManager::ReadLoop(Slot* slot) {
             const auto& lPad = m_profile.leftPad;
             const auto& rPad = m_profile.rightPad;
 
+            // A member an active combo has claimed, or that is still inside
+            // its post-press grace window waiting to find out, does not also
+            // dispatch its own binding — see the per-member debounce above
+            // and ApplyButtonRemap's own claim-based suppression, which this
+            // mirrors for the paddles and pad clicks (neither reaches the
+            // virtual pad at all, so ApplyButtonRemap has nothing to hide for
+            // them; this is the only place that does). chordMemberSolo/
+            // prevChordMemberSolo already carry both the claim and the grace
+            // window, so cur and prev are just last frame's and this frame's
+            // answer for the same member, the same as every other "prev"
+            // field on this slot.
+            const bool l4Cur  = slot->chordMemberSolo[static_cast<size_t>(ChordMember::PaddleL4)];
+            const bool l4Prev = slot->prevChordMemberSolo[static_cast<size_t>(ChordMember::PaddleL4)];
+            const bool l5Cur  = slot->chordMemberSolo[static_cast<size_t>(ChordMember::PaddleL5)];
+            const bool l5Prev = slot->prevChordMemberSolo[static_cast<size_t>(ChordMember::PaddleL5)];
+            const bool r4Cur  = slot->chordMemberSolo[static_cast<size_t>(ChordMember::PaddleR4)];
+            const bool r4Prev = slot->prevChordMemberSolo[static_cast<size_t>(ChordMember::PaddleR4)];
+            const bool r5Cur  = slot->chordMemberSolo[static_cast<size_t>(ChordMember::PaddleR5)];
+            const bool r5Prev = slot->prevChordMemberSolo[static_cast<size_t>(ChordMember::PaddleR5)];
+            const bool leftClickCur  =
+                slot->chordMemberSolo[static_cast<size_t>(ChordMember::LeftPadClick)] && leftClickInCentre;
+            const bool leftClickPrev =
+                slot->prevChordMemberSolo[static_cast<size_t>(ChordMember::LeftPadClick)] && leftClickInCentre;
+            const bool rightClickCur  =
+                slot->chordMemberSolo[static_cast<size_t>(ChordMember::RightPadClick)] && rightClickInCentre;
+            const bool rightClickPrev =
+                slot->prevChordMemberSolo[static_cast<size_t>(ChordMember::RightPadClick)] && rightClickInCentre;
+
             // Held by value rather than by reference: half of these bindings
             // are returned by value from the Effective* accessors, and a
             // reference member would be bound to a temporary.
             struct PaddleEdge { bool cur; bool prev; BackButtonBinding binding; };
+            static_assert(kChordSlotCount == 6,
+                          "the six Chord entries below must be added to or "
+                          "trimmed to match a changed kChordSlotCount");
             const PaddleEdge edges[] = {
-                { n>4 && (buf[4]&SteamController::BTN_L4)!=0, (prevBuf[4]&SteamController::BTN_L4)!=0, m_profile.back.l4 },
-                { n>4 && (buf[4]&SteamController::BTN_L5)!=0, (prevBuf[4]&SteamController::BTN_L5)!=0, m_profile.back.l5 },
-                { n>2 && (buf[2]&SteamController::BTN_R4)!=0, (prevBuf[2]&SteamController::BTN_R4)!=0, m_profile.back.r4 },
-                { n>3 && (buf[3]&SteamController::BTN_R5)!=0, (prevBuf[3]&SteamController::BTN_R5)!=0, m_profile.back.r5 },
+                { l4Cur, l4Prev, m_profile.back.l4 },
+                { l5Cur, l5Prev, m_profile.back.l5 },
+                { r4Cur, r4Prev, m_profile.back.r4 },
+                { r5Cur, r5Prev, m_profile.back.r5 },
                 // Pressed comes from contact area, not the report's click bit,
                 // so like the directions its previous answer is carried on the
                 // slot rather than re-read from the previous report.
-                { resolved.leftPressed  && leftClickInCentre,  slot->prevLeftPressed  && leftClickInCentre,  leftPadClick },
-                { resolved.rightPressed && rightClickInCentre, slot->prevRightPressed && rightClickInCentre, rightPadClick },
+                { leftClickCur,  leftClickPrev,  leftPadClick },
+                { rightClickCur, rightClickPrev, rightPadClick },
                 // A tap is not zoned — it cannot collide with a direction,
                 // which comes from the click, and a thumb crosses zones
                 // constantly while sliding. It is decided on the lift rather
@@ -1757,15 +2077,28 @@ void ControllerManager::ReadLoop(Slot* slot) {
                   m_profile.leftTrigger.EffectiveFull() },
                 { resolved.rightTriggerFull, slot->prevRightTriggerFull,
                   m_profile.rightTrigger.EffectiveFull() },
+                // Button combos: fires while both of a configured slot's
+                // members are held, in place of whichever of the edges above
+                // they would otherwise have dispatched — see the evaluation
+                // block earlier in this frame and ChordConfig.h. An
+                // unconfigured slot's chordActive stays false on both sides
+                // forever, so this does nothing for it.
+                { chordActive[0], slot->prevChordActive[0], m_profile.chords[0].action },
+                { chordActive[1], slot->prevChordActive[1], m_profile.chords[1].action },
+                { chordActive[2], slot->prevChordActive[2], m_profile.chords[2].action },
+                { chordActive[3], slot->prevChordActive[3], m_profile.chords[3].action },
+                { chordActive[4], slot->prevChordActive[4], m_profile.chords[4].action },
+                { chordActive[5], slot->prevChordActive[5], m_profile.chords[5].action },
             };
-            static_assert(std::size(edges) == Slot::kBindableCount,
+            static_assert(std::size(edges) == Slot::kPaddleEdgeCount,
                           "paddleHeld must have one entry per edge-dispatched binding");
-            for (size_t i = 0; i < std::size(edges); ++i) {
-                const auto& e = edges[i];
-                if (e.cur == e.prev) continue;
-                if (e.cur) {
-                    if (SendPaddleInput(e.binding, true)) {
-                        slot->paddleHeld[i]     = e.binding;
+
+            auto dispatchEdge = [&](size_t i, bool cur, bool prev,
+                                    const BackButtonBinding& binding) {
+                if (cur == prev) return;
+                if (cur) {
+                    if (SendPaddleInput(binding, true)) {
+                        slot->paddleHeld[i]     = binding;
                         slot->paddleRepeatGap[i] = KeyRepeatInterval();
                         slot->paddleRepeatAt[i]  =
                             std::chrono::steady_clock::now() + KeyRepeatDelay();
@@ -1776,6 +2109,29 @@ void ControllerManager::ReadLoop(Slot* slot) {
                     SendPaddleInput(slot->paddleHeld[i], false);
                     slot->paddleHeld[i] = BackButtonBinding{};
                 }
+            };
+            for (size_t i = 0; i < std::size(edges); ++i)
+                dispatchEdge(i, edges[i].cur, edges[i].prev, edges[i].binding);
+
+            // The ordinary buttons. Read from the physical report, not from what
+            // the virtual pad is shown — that has the remapped ones taken out.
+            // Effective is empty for a button nobody has remapped, so those fall
+            // through untouched and stay the virtual pad's business.
+            //
+            // A button claimed by an active combo, or still inside its grace
+            // window waiting to find out, is excluded here too — see the
+            // per-member debounce above — including one that is not
+            // individually remapped at all: a held L3/R3 claimed for a combo
+            // must not also repeat A's own unrelated binding just because it
+            // happens to be the 13th and 14th bits in this same loop.
+            for (size_t i = 0; i < kPadButtonCount; ++i) {
+                const auto b = static_cast<PadButton>(i);
+                const auto member = static_cast<ChordMember>(
+                    static_cast<uint32_t>(ChordMember::BtnA) + i);
+                dispatchEdge(Slot::kPaddleEdgeCount + i,
+                             slot->chordMemberSolo[static_cast<size_t>(member)],
+                             slot->prevChordMemberSolo[static_cast<size_t>(member)],
+                             m_profile.buttons.Effective(b));
             }
         }
 
@@ -1819,10 +2175,11 @@ void ControllerManager::ReadLoop(Slot* slot) {
         slot->prevRightDirs = resolved.rightDirs;
         slot->prevLeftTap  = resolved.leftTap;
         slot->prevRightTap = resolved.rightTap;
-        slot->prevLeftPressed  = resolved.leftPressed;
-        slot->prevRightPressed = resolved.rightPressed;
         slot->prevLeftTriggerFull  = resolved.leftTriggerFull;
         slot->prevRightTriggerFull = resolved.rightTriggerFull;
+        for (size_t ci = 0; ci < kChordSlotCount; ++ci)
+            slot->prevChordActive[ci] = chordActive[ci];
+        slot->prevChordClaimedMask = chordClaimedMask;
 
         memcpy(prevBuf, buf, n);
         hasPrev = true;

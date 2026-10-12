@@ -11,6 +11,10 @@ When **Steamless Mode** is active, the app disables the controller's built-in ke
 - Supports all connection modes! Puck, wired, and Bluetooth!
 - Runs alongside Steam! No need to close Steam to toggle modes or force you to use your PC in a weird way.
 - Brand new extensive remapping controls for back buttons and trackpads. Save custom mappings and load them per game!
+- **Every button can be remapped**, not just the back paddles: A, B, X, Y, the bumpers, the d-pad, Menu, View, the Steam button and both stick clicks each take a gamepad button, a keyboard key (with modifiers) or a mouse button. A can be Enter, B and Menu can be Esc.
+- **Steam's scroll wheel**: the left pad can scroll the way Steam does — circle the pad like turning a wheel and the page follows how far round your thumb goes, instead of swiping. Swipe scrolling is still there as a choice.
+- **Triggers can be mouse buttons**: set a trigger to *Button* and it becomes a click with the same adjustable press point and click feel as a dual-stage trigger, and no analog value reaches the game. Pad clicks can be mouse buttons too.
+- **Steam desktop layout** — one button in the customize window fills in the controls the way Steam's own desktop configuration does: pointer and left-click on the right pad, circular scroll and right-click on the left, triggers as clicks, arrow keys on the d-pad.
 - Use a trackpad as a **directional pad** — press its outer edge for a direction and its middle for a button of its own — or as a **single button**. Each direction, the click and a tap are all rebindable.
 - Enable/Disable manually, or use new auto modes to turn on / off when it makes sense.
 - **Steam + Y turns the controller off**, just like it does under Steam (puck and Bluetooth; a controller on a cable is powered by it and stays on).
@@ -83,6 +87,7 @@ The filename must match `#define ViGEmSetup` at the top of the script. Inno reso
 | `SteamlessDeviceCycle` | Elevated helper that disables and re-enables the controller's device node, run as an on-demand scheduled task. Shipped by the installer. |
 | `ViGEmBusProbe` | Reports whether a ViGEm bus is present by enumerating its interface. Used by Setup to verify the driver installed, and shipped as a diagnostic. |
 | `SteamProbe` | Console diagnostic tool — dumps raw HID report bytes as you interact with the controller. Useful for protocol research. |
+| `ButtonRemapProbe` | Console checks, no controller needed — button defaults and remapping, the registry round trip, and the angle arithmetic behind circular scrolling. |
 | `RawControllerProbe` | Checks whether `Windows.Gaming.Input.RawGameController` can enumerate the Steam Controller (requires WinRT). |
 | `GameLibraryProbe` | Console diagnostic — lists every application the per-game profile picker can find, with the source each came from and a per-source count. Ask for its output when someone reports that a game is missing from the picker. Given a directory, it instead runs only the Epic manifest reader against it. |
 

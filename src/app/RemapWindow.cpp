@@ -2,6 +2,7 @@
 #include "KeyInput.h"
 #include "ControllerManager.h"
 #include "EventLog.h"
+#include "GameProfiles.h"
 #include "ProcessIdentity.h"
 #include <shellapi.h>
 #include <shlobj.h>
@@ -125,6 +126,8 @@ button{font-family:'Barlow',system-ui,sans-serif;cursor:pointer;border:none;back
 .combo-item .exe{display:block;font-size:11px;color:#5c6b78;margin-top:2px;}
 .mode-row{padding-top:14px;padding-bottom:14px;}
 .mode-select{background:#101925;border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#fff;font-size:13px;font-family:'Barlow',system-ui,sans-serif;padding:7px 10px;font-weight:600;cursor:pointer;flex:none;min-width:215px;}
+.combo-select{min-width:150px;flex:1;}
+.combo-plus{color:#5c6b78;font-weight:700;flex:none;}
 .mode-select:hover{border-color:#66c0f4;}
 .mode-select:focus{outline:none;border-color:#66c0f4;}
 .speed-wrap{display:flex;align-items:center;gap:10px;flex:none;min-width:215px;}
@@ -297,6 +300,56 @@ R"HTML(
         </div>
       </div>
     </div>
+    <div class="row mode-row" id="saccel-row-LPAD">
+      <div class="row-top">
+        <span class="pos-label">Scroll Acceleration</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="saccel-LPAD" class="speed-slider">
+          <span class="speed-val" id="saccel-val-LPAD">1x</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="ptrspeed-row-LPAD">
+      <div class="row-top">
+        <span class="pos-label">Pointer Speed</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="ptrspeed-LPAD" class="speed-slider">
+          <span class="speed-val" id="ptrspeed-val-LPAD">1x</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="paccel-row-LPAD">
+      <div class="row-top">
+        <span class="pos-label">Pointer Acceleration</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="paccel-LPAD" class="speed-slider">
+          <span class="speed-val" id="paccel-val-LPAD">1x</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="deadzone-row-LPAD">
+      <div class="row-top">
+        <span class="pos-label">Dead Zone</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="deadzone-LPAD" class="speed-slider">
+          <span class="speed-val" id="deadzone-val-LPAD">400</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="glide-row-LPAD">
+      <div class="row-top">
+        <span class="pos-label">Glide (release coast)</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="glide-LPAD" class="speed-slider">
+          <span class="speed-val" id="glide-val-LPAD">1x</span>
+        </div>
+      </div>
+    </div>
     <div class="row mode-row" id="diag-row-LPAD">
       <div class="row-top">
         <span class="pos-label">Diagonals</span>
@@ -335,6 +388,56 @@ R"HTML(
         <div class="speed-wrap">
           <input type="range" id="speed-RPAD" class="speed-slider">
           <span class="speed-val" id="speed-val-RPAD">1x</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="saccel-row-RPAD">
+      <div class="row-top">
+        <span class="pos-label">Scroll Acceleration</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="saccel-RPAD" class="speed-slider">
+          <span class="speed-val" id="saccel-val-RPAD">1x</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="ptrspeed-row-RPAD">
+      <div class="row-top">
+        <span class="pos-label">Pointer Speed</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="ptrspeed-RPAD" class="speed-slider">
+          <span class="speed-val" id="ptrspeed-val-RPAD">1x</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="paccel-row-RPAD">
+      <div class="row-top">
+        <span class="pos-label">Pointer Acceleration</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="paccel-RPAD" class="speed-slider">
+          <span class="speed-val" id="paccel-val-RPAD">1x</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="deadzone-row-RPAD">
+      <div class="row-top">
+        <span class="pos-label">Dead Zone</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="deadzone-RPAD" class="speed-slider">
+          <span class="speed-val" id="deadzone-val-RPAD">400</span>
+        </div>
+      </div>
+    </div>
+    <div class="row mode-row" id="glide-row-RPAD">
+      <div class="row-top">
+        <span class="pos-label">Glide (release coast)</span>
+        <div class="connector"></div>
+        <div class="speed-wrap">
+          <input type="range" id="glide-RPAD" class="speed-slider">
+          <span class="speed-val" id="glide-val-RPAD">1x</span>
         </div>
       </div>
     </div>
@@ -472,10 +575,11 @@ R"HTML(
 'use strict';
 // ---- Defaults ----
 // Upper paddles left-click, lower paddles unbound; the right pad points and
-// clicks while the left pad scrolls. Keep in sync with ControllerProfile in
+// left-clicks while the left pad scrolls and right-clicks. Keep in sync with
+// ControllerProfile in
 // TrackpadConfig.h — these two are what "default" means, and a fresh install
 // and this window's reset button both have to land on the same thing.
-var DEFAULTS = {L4:'leftMouse',L5:'none',R4:'leftMouse',R5:'none',LPAD:'none',RPAD:'leftMouse',
+var DEFAULTS = {L4:'leftMouse',L5:'none',R4:'leftMouse',R5:'none',LPAD:'rightMouse',RPAD:'leftMouse',
   // Directions default to the gamepad d-pad so picking the mode does the
   // obvious thing before anything is rebound; touch starts unbound. Keep in
   // step with TrackpadSettings in TrackpadConfig.h.
@@ -487,23 +591,70 @@ var DEFAULT_DIAGS = {LPAD:'eight',RPAD:'eight'};
 // Percent of the calibrated scroll scale. Keep in step with
 // kScrollSpeedDefault in TrackpadConfig.h.
 var DEFAULT_SPEEDS = {LPAD:100,RPAD:100};
+// Percent of the calibrated trackball-glide feel. Keep in step with
+// kGlideStrengthDefault in TrackpadConfig.h.
+var DEFAULT_GLIDES = {LPAD:33,RPAD:33};
+// Percent of the calibrated pointer pace. Keep in step with
+// kPointerSpeedDefault in TrackpadConfig.h.
+var DEFAULT_PTRSPEEDS = {LPAD:100,RPAD:100};
+// Raw pad units. Keep in step with kPointerDeadzoneDefault in TrackpadConfig.h.
+var DEFAULT_DEADZONES = {LPAD:400,RPAD:400};
+// Percent strength of the speed-shaped scroll/pointer acceleration. Keep in
+// step with kScrollAccelDefault / kPointerAccelDefault in TrackpadConfig.h.
+var DEFAULT_SACCELS = {LPAD:100,RPAD:100};
+var DEFAULT_PACCELS = {LPAD:100,RPAD:100};
 // The stops the scroll speed slider offers, as percentages of the calibrated
 // feel. Stored and sent as those percentages, so the C++ side keeps taking any
 // value in kScrollSpeedMin..Max and nothing about persistence changes — these
 // are where the slider is willing to stop, not what the setting can hold.
 //
 // Discrete rather than continuous for two reasons. The spacing is roughly a
-// constant ratio (about 1.4x a step), which a linear slider cannot be: over
-// 10..400 linear, three quarters of the track sits above 1x where nobody has
-// asked to go, and the region people actually use is squeezed into the first
-// quarter. And a named stop can be said out loud — "set it to 0.5x" ends a
-// support round trip that "set it to 47%" starts another one of.
+// constant ratio (about 1.12x a step — R20, the preferred-number series
+// engineers already use for exactly this problem: a geometric run of
+// recognisable values rather than an arbitrary one), which a linear slider
+// cannot manage: over 10..400 linear, three quarters of the track sits above
+// 1x where nobody has asked to go, and the region people actually use is
+// squeezed into the first quarter. And a named stop can be said out loud —
+// "set it to 0.5x" ends a support round trip that "set it to 47%" starts
+// another one of.
 //
-// 100 is here because it is the default, and 25 because that is where the #95
-// reporter settled; a list that rounded either of them away would move a
-// setting somebody had already chosen.
-var SPEED_STOPS = [10,15,25,35,50,75,100,150,200,300,400];
+// Denser than the first cut of this slider on request, for finer calibration;
+// a constant ratio means adding stops costs nothing but length, the spacing
+// everywhere else is unchanged. 100 is here because it is the default, and 25
+// because that is where the #95 reporter settled; a list that rounded either
+// of them away would move a setting somebody had already chosen.
+var SPEED_STOPS = [10,12,14,16,18,20,22,25,28,32,36,40,45,50,56,63,71,80,90,100,
+  112,125,140,160,180,200,224,250,280,315,355,400];
+// Same shape as SPEED_STOPS, but over kGlideStrengthMin..Max: where the glide
+// slider is willing to stop, not what the setting can hold. 33 is here because
+// it is the default.
+var GLIDE_STOPS = [10,12,14,16,18,20,22,25,28,33,36,40,45,50,56,63,71,80,90,
+  100,112,125,140,160,180,200,224,250,280,300];
+// Same shape as SPEED_STOPS, but over kPointerSpeedMin..Max.
+var PTRSPEED_STOPS = [10,12,14,16,18,20,22,25,28,32,36,40,45,50,56,63,71,80,90,
+  100,112,125,140,160,180,200,224,250,280,315,355,400];
+// Where the dead zone slider is willing to stop, in raw pad units — over
+// kPointerDeadzoneMin..Max, the same R20-ish ratio as the percentage stops
+// above but scaled to this one's own range. 400 is here because it is the
+// default.
+var DEADZONE_STOPS = [50,56,63,71,80,90,100,112,125,140,160,180,200,224,250,
+  280,315,355,400,450,500,560,630,710,800,900,1000,1120,1250,1400,1600,1800,
+  2000];
+// Same shape as SPEED_STOPS, over kScrollAccelMin..Max / kPointerAccelMin..Max.
+// 10 is as close to "off" as the wire format can express — see
+// kScrollAccelDefault for why a true zero cannot be stored.
+var SACCEL_STOPS = [10,12,14,16,18,20,22,25,28,32,36,40,45,50,56,63,71,80,90,
+  100,112,125,140,160,180,200,224,250,280,300];
+var PACCEL_STOPS = SACCEL_STOPS;
 var DEFAULT_PLATFORM = 'xbox';
+// The one profile that is not a game: whatever applies when the foreground is
+// the Windows shell rather than an installed application. Pinned in the
+// picker exactly like Default, and for the same reason — it always exists as
+// a destination to configure, whether or not anything has been saved under it
+// yet. Keep in step with the "desktop" token RemapWindow.cpp's apply/delete
+// handlers and ProfilesJson special-case.
+var DESKTOP_ID = 'desktop';
+var DESKTOP_NAME = 'Desktop';
 
 // ---- State ----
 var bindings = {L4:'leftMouse',L5:'none',R4:'leftMouse',R5:'none',LPAD:'none',RPAD:'none'};
@@ -518,6 +669,15 @@ var diags = {LPAD:'eight',RPAD:'eight'};
 // Scroll speed per pad, kept for every pad for the same reason as the two
 // above: switching modes back and forth must not lose the choice.
 var speeds = {LPAD:100,RPAD:100};
+// Glide strength per pad, kept for every pad for the same reason.
+var glides = {LPAD:33,RPAD:33};
+// Pointer speed and dead zone per pad, kept for every pad for the same reason.
+var ptrSpeeds = {LPAD:100,RPAD:100};
+var deadzones = {LPAD:400,RPAD:400};
+// Scroll and pointer acceleration strength per pad, kept for every pad for
+// the same reason.
+var sAccels = {LPAD:100,RPAD:100};
+var pAccels = {LPAD:100,RPAD:100};
 var platform = 'xbox';
 // This game follows the default profile's controls instead of carrying its
 // own. Only ever true for a game — the default has nothing to follow.
@@ -613,7 +773,7 @@ var runningOpen = false;
 // Each profile is a flat object: one entry per bindable row id, plus
 // "<pad>mode" for each trackpad's movement mode. Flat because the JSON
 // reader on the C++ side matches "key":"value" pairs without nesting.
-var PROFILES = {'':{platform:'xbox',L4:'leftMouse',L5:'none',R4:'leftMouse',R5:'none',LPAD:'none',RPAD:'leftMouse',LPADmode:'scroll',RPADmode:'pointer',LPADdir:'natural',RPADdir:'natural',LPADspeed:'100',RPADspeed:'100',LPADdiag:'eight',RPADdiag:'eight',LPADtouch:'none',RPADtouch:'none',LPADup:'Up',LPADdown:'Down',LPADleft:'Left',LPADright:'Right',RPADup:'Up',RPADdown:'Down',RPADleft:'Left',RPADright:'Right'}};
+var PROFILES = {'':{platform:'xbox',L4:'leftMouse',L5:'none',R4:'leftMouse',R5:'none',LPAD:'rightMouse',RPAD:'leftMouse',LPADmode:'scroll',RPADmode:'pointer',LPADdir:'natural',RPADdir:'natural',LPADspeed:'100',RPADspeed:'100',LPADsaccel:'100',RPADsaccel:'100',LPADglide:'33',RPADglide:'33',LPADptrspeed:'100',RPADptrspeed:'100',LPADpaccel:'100',RPADpaccel:'100',LPADdeadzone:'400',RPADdeadzone:'400',LPADdiag:'eight',RPADdiag:'eight',LPADtouch:'none',RPADtouch:'none',LPADup:'Up',LPADdown:'Down',LPADleft:'Left',LPADright:'Right',RPADup:'Up',RPADdown:'Down',RPADleft:'Left',RPADright:'Right'}};
 var currentGame = '';
 var comboOpen = false;
 var comboQuery = '';
@@ -842,21 +1002,113 @@ function setSpeed(padId,value){
   var out=document.getElementById('speed-val-'+padId);
   if(out) out.textContent=speedLabel(speeds[padId]);
 }
+// Same shape as clampSpeed/setSpeed, over GLIDE_STOPS/DEFAULT_GLIDES instead.
+function clampGlide(padId,value){
+  var v=parseInt(value,10);
+  if(isNaN(v)||v===0) return DEFAULT_GLIDES[padId];
+  var best=GLIDE_STOPS[0];
+  for(var i=0;i<GLIDE_STOPS.length;i++){
+    if(Math.abs(GLIDE_STOPS[i]-v)<Math.abs(best-v)) best=GLIDE_STOPS[i];
+  }
+  return best;
+}
+function glideLabel(value){ return String(value/100)+'x'; }
+function setGlide(padId,value){
+  glides[padId]=clampGlide(padId,value);
+  var out=document.getElementById('glide-val-'+padId);
+  if(out) out.textContent=glideLabel(glides[padId]);
+}
+// Same shape again, over PTRSPEED_STOPS/DEFAULT_PTRSPEEDS.
+function clampPtrSpeed(padId,value){
+  var v=parseInt(value,10);
+  if(isNaN(v)||v===0) return DEFAULT_PTRSPEEDS[padId];
+  var best=PTRSPEED_STOPS[0];
+  for(var i=0;i<PTRSPEED_STOPS.length;i++){
+    if(Math.abs(PTRSPEED_STOPS[i]-v)<Math.abs(best-v)) best=PTRSPEED_STOPS[i];
+  }
+  return best;
+}
+function ptrSpeedLabel(value){ return String(value/100)+'x'; }
+function setPtrSpeed(padId,value){
+  ptrSpeeds[padId]=clampPtrSpeed(padId,value);
+  var out=document.getElementById('ptrspeed-val-'+padId);
+  if(out) out.textContent=ptrSpeedLabel(ptrSpeeds[padId]);
+}
+// Same shape again, over DEADZONE_STOPS/DEFAULT_DEADZONES — a raw unit count
+// rather than a multiplier, so the readout is the plain number.
+function clampDeadzone(padId,value){
+  var v=parseInt(value,10);
+  if(isNaN(v)||v===0) return DEFAULT_DEADZONES[padId];
+  var best=DEADZONE_STOPS[0];
+  for(var i=0;i<DEADZONE_STOPS.length;i++){
+    if(Math.abs(DEADZONE_STOPS[i]-v)<Math.abs(best-v)) best=DEADZONE_STOPS[i];
+  }
+  return best;
+}
+function setDeadzone(padId,value){
+  deadzones[padId]=clampDeadzone(padId,value);
+  var out=document.getElementById('deadzone-val-'+padId);
+  if(out) out.textContent=String(deadzones[padId]);
+}
+// Same shape again, over SACCEL_STOPS/DEFAULT_SACCELS.
+function clampSAccel(padId,value){
+  var v=parseInt(value,10);
+  if(isNaN(v)||v===0) return DEFAULT_SACCELS[padId];
+  var best=SACCEL_STOPS[0];
+  for(var i=0;i<SACCEL_STOPS.length;i++){
+    if(Math.abs(SACCEL_STOPS[i]-v)<Math.abs(best-v)) best=SACCEL_STOPS[i];
+  }
+  return best;
+}
+function accelLabel(value){ return String(value/100)+'x'; }
+function setSAccel(padId,value){
+  sAccels[padId]=clampSAccel(padId,value);
+  var out=document.getElementById('saccel-val-'+padId);
+  if(out) out.textContent=accelLabel(sAccels[padId]);
+}
+// Same shape again, over PACCEL_STOPS/DEFAULT_PACCELS.
+function clampPAccel(padId,value){
+  var v=parseInt(value,10);
+  if(isNaN(v)||v===0) return DEFAULT_PACCELS[padId];
+  var best=PACCEL_STOPS[0];
+  for(var i=0;i<PACCEL_STOPS.length;i++){
+    if(Math.abs(PACCEL_STOPS[i]-v)<Math.abs(best-v)) best=PACCEL_STOPS[i];
+  }
+  return best;
+}
+function setPAccel(padId,value){
+  pAccels[padId]=clampPAccel(padId,value);
+  var out=document.getElementById('paccel-val-'+padId);
+  if(out) out.textContent=accelLabel(pAccels[padId]);
+}
 function setDiag(padId,diagId){
   diags[padId]=diagId;
 }
+// Whether this pad scrolls by swiping or by circling lives with the other
+// scroll controls further down, in the literal that has the room for it.
 function resetDefaults(){
   cancelListening();
   platform=DEFAULT_PLATFORM;
   bindings={};
   ROWS.forEach(function(r){bindings[r.id]=DEFAULTS[r.id];});
-  modes={}; dirs={}; diags={}; speeds={};
+  modes={}; dirs={}; diags={}; speeds={}; glides={}; ptrSpeeds={}; deadzones={};
+  sAccels={}; pAccels={}; styles={};
   PADS.forEach(function(p){
     modes[p]=DEFAULT_MODES[p];
+    styles[p]=DEFAULT_STYLES[p];
     dirs[p]=DEFAULT_DIRS[p];
     diags[p]=DEFAULT_DIAGS[p];
     speeds[p]=DEFAULT_SPEEDS[p];
+    glides[p]=DEFAULT_GLIDES[p];
+    ptrSpeeds[p]=DEFAULT_PTRSPEEDS[p];
+    deadzones[p]=DEFAULT_DEADZONES[p];
+    sAccels[p]=DEFAULT_SACCELS[p];
+    pAccels[p]=DEFAULT_PACCELS[p];
   });
+  for(var _rci=0;_rci<CHORD_SLOT_COUNT;_rci++){
+    chordA[_rci]=defaultChordA(_rci);
+    chordB[_rci]=defaultChordB(_rci);
+  }
   triggerReset();
   flash=null;
   clearTimeout(flashTimer);
@@ -878,9 +1130,19 @@ function currentProfile(){
   PADS.forEach(function(x){
     p[x+'mode']=modes[x];
     p[x+'dir']=dirs[x];
+    p[x+'style']=styles[x];
     p[x+'diag']=diags[x];
     p[x+'speed']=String(speeds[x]);
+    p[x+'glide']=String(glides[x]);
+    p[x+'ptrspeed']=String(ptrSpeeds[x]);
+    p[x+'deadzone']=String(deadzones[x]);
+    p[x+'saccel']=String(sAccels[x]);
+    p[x+'paccel']=String(pAccels[x]);
   });
+  for(var _cci=0;_cci<CHORD_SLOT_COUNT;_cci++){
+    p['Chord'+_cci+'A']=chordA[_cci];
+    p['Chord'+_cci+'B']=chordB[_cci];
+  }
   triggerToProfile(p);
   return p;
 }
@@ -902,15 +1164,32 @@ function loadProfileInto(p){
   ROWS.forEach(function(r){
     bindings[r.id]=p.hasOwnProperty(r.id)?p[r.id]:DEFAULTS[r.id];
   });
-  modes={}; dirs={}; diags={}; speeds={};
+  modes={}; dirs={}; diags={}; speeds={}; glides={}; ptrSpeeds={}; deadzones={};
+  sAccels={}; pAccels={}; styles={};
   PADS.forEach(function(x){
     modes[x]=p.hasOwnProperty(x+'mode')?p[x+'mode']:DEFAULT_MODES[x];
     dirs[x] =p.hasOwnProperty(x+'dir') ?p[x+'dir'] :DEFAULT_DIRS[x];
+    styles[x]=(p.hasOwnProperty(x+'style')?p[x+'style']:DEFAULT_STYLES[x])==='rotary'?'rotary':'swipe';
     diags[x]=p.hasOwnProperty(x+'diag')?p[x+'diag']:DEFAULT_DIAGS[x];
-    // clampSpeed turns a missing key into the default, so this needs no
-    // hasOwnProperty guard of its own.
+    // clampSpeed/clampGlide/clampPtrSpeed/clampDeadzone/clampSAccel/
+    // clampPAccel turn a missing key into the default, so none of them needs
+    // a hasOwnProperty guard of its own.
     speeds[x]=clampSpeed(x,p[x+'speed']);
+    glides[x]=clampGlide(x,p[x+'glide']);
+    ptrSpeeds[x]=clampPtrSpeed(x,p[x+'ptrspeed']);
+    deadzones[x]=clampDeadzone(x,p[x+'deadzone']);
+    sAccels[x]=clampSAccel(x,p[x+'saccel']);
+    pAccels[x]=clampPAccel(x,p[x+'paccel']);
   });
+  // Unrecognised member ids (a profile from a build with fewer of them, or a
+  // corrupt value) fall back to 'none' rather than being passed through, the
+  // same way an unrecognised mode or style already does elsewhere here.
+  for(var _lci=0;_lci<CHORD_SLOT_COUNT;_lci++){
+    var _a=p.hasOwnProperty('Chord'+_lci+'A')?p['Chord'+_lci+'A']:defaultChordA(_lci);
+    var _b=p.hasOwnProperty('Chord'+_lci+'B')?p['Chord'+_lci+'B']:defaultChordB(_lci);
+    chordA[_lci]=CHORD_MEMBERS.some(function(m){return m.id===_a;})?_a:'none';
+    chordB[_lci]=CHORD_MEMBERS.some(function(m){return m.id===_b;})?_b:'none';
+  }
   triggerFromProfile(p);
   savedProfile=currentProfile();
 }
@@ -1002,6 +1281,10 @@ function removeCurrent(){
 R"HTML(
 // ---- Per-game picker (searchable combo box) ----
 function gameName(gameId){
+  // Not a real installed game, so it never appears in GAMES — handled here
+  // once so every caller (the label, the unsaved-changes prompt, the delete
+  // confirmation) names it correctly without its own special case.
+  if(gameId===DESKTOP_ID) return DESKTOP_NAME;
   for(var i=0;i<GAMES.length;i++) if(GAMES[i].id===gameId) return GAMES[i].name;
   return '';
 }
@@ -1037,11 +1320,17 @@ function renderCombo(){
   var pinned=pinnedGames();
   if(q) pinned=pinned.filter(function(g){return g.name.toLowerCase().indexOf(q)>=0;});
   var showDefault=!q||'default (all other games)'.indexOf(q)>=0;
+  // Desktop is pinned unconditionally, the same as Default — it is always a
+  // destination to configure, whether or not it has been customized yet, not
+  // something that only appears once a profile exists under it.
+  var showDesktop=!q||DESKTOP_NAME.toLowerCase().indexOf(q)>=0;
 
-  if(showDefault||pinned.length){
+  if(showDefault||showDesktop||pinned.length){
     html+='<div class="combo-section-label">PROFILES</div><div class="combo-list">';
     if(showDefault)
       html+=itemHTML('','Default (all other games)');
+    if(showDesktop)
+      html+=itemHTML(DESKTOP_ID,DESKTOP_NAME);
     pinned.forEach(function(g){html+=itemHTML(g.id,g.name,g.missing==='1');});
     html+='</div>';
   }
@@ -1056,7 +1345,7 @@ function renderCombo(){
       html+='<div class="combo-section-label">FOUND ON THIS PC</div><div class="combo-list">';
       matches.forEach(function(g){html+=itemHTML(g.id,g.name,g.missing==='1');});
       html+='</div>';
-    } else if(!pinned.length&&!showDefault){
+    } else if(!pinned.length&&!showDefault&&!showDesktop){
       // The moment the user finds out their game is missing. The two actions
       // below the results are what answers it, so say so rather than leaving
       // them at a dead end.
@@ -1224,7 +1513,8 @@ function renderModeSelects(){
   var opts=modeOptions();
   PADS.forEach(function(padId){
     fillSelect('mode-'+padId,opts,modes[padId]);
-    fillSelect('dir-'+padId,DIR_OPTIONS,dirs[padId]);
+    fillSelect('style-'+padId,STYLE_OPTIONS,styles[padId]);
+    fillSelect('dir-'+padId,dirOptions(padId),dirs[padId]);
     fillSelect('diag-'+padId,DIAG_OPTIONS,diags[padId]);
     var speedSel=document.getElementById('speed-'+padId);
     if(speedSel){
@@ -1236,7 +1526,41 @@ function renderModeSelects(){
     // Goes through setSpeed so the readout beside the slider is written by the
     // one function that owns it, rather than by two that can drift apart.
     setSpeed(padId,speeds[padId]);
+    var sAccelSel=document.getElementById('saccel-'+padId);
+    if(sAccelSel){
+      sAccelSel.min=0; sAccelSel.max=SACCEL_STOPS.length-1; sAccelSel.step=1;
+      sAccelSel.value=SACCEL_STOPS.indexOf(clampSAccel(padId,sAccels[padId]));
+    }
+    setSAccel(padId,sAccels[padId]);
+    var glideSel=document.getElementById('glide-'+padId);
+    if(glideSel){
+      glideSel.min=0; glideSel.max=GLIDE_STOPS.length-1; glideSel.step=1;
+      glideSel.value=GLIDE_STOPS.indexOf(clampGlide(padId,glides[padId]));
+    }
+    setGlide(padId,glides[padId]);
+    var ptrSpeedSel=document.getElementById('ptrspeed-'+padId);
+    if(ptrSpeedSel){
+      ptrSpeedSel.min=0; ptrSpeedSel.max=PTRSPEED_STOPS.length-1; ptrSpeedSel.step=1;
+      ptrSpeedSel.value=PTRSPEED_STOPS.indexOf(clampPtrSpeed(padId,ptrSpeeds[padId]));
+    }
+    setPtrSpeed(padId,ptrSpeeds[padId]);
+    var deadzoneSel=document.getElementById('deadzone-'+padId);
+    if(deadzoneSel){
+      deadzoneSel.min=0; deadzoneSel.max=DEADZONE_STOPS.length-1; deadzoneSel.step=1;
+      deadzoneSel.value=DEADZONE_STOPS.indexOf(clampDeadzone(padId,deadzones[padId]));
+    }
+    setDeadzone(padId,deadzones[padId]);
+    var pAccelSel=document.getElementById('paccel-'+padId);
+    if(pAccelSel){
+      pAccelSel.min=0; pAccelSel.max=PACCEL_STOPS.length-1; pAccelSel.step=1;
+      pAccelSel.value=PACCEL_STOPS.indexOf(clampPAccel(padId,pAccels[padId]));
+    }
+    setPAccel(padId,pAccels[padId]);
   });
+  for(var _ci=0;_ci<CHORD_SLOT_COUNT;_ci++){
+    fillSelect('chordA-'+_ci,CHORD_MEMBERS,chordA[_ci]);
+    fillSelect('chordB-'+_ci,CHORD_MEMBERS,chordB[_ci]);
+  }
   renderPadRows();
   renderTriggerSelects();
 }
@@ -1245,10 +1569,22 @@ function renderPadRows(){
   PADS.forEach(function(padId){
     var mode=modes[padId];
     var shown=PAD_ROWS_BY_MODE[mode]||[];
+    var styleRow=document.getElementById('style-row-'+padId);
+    if(styleRow) styleRow.style.display=(mode==='scroll')?'':'none';
     var dirRow=document.getElementById('dir-row-'+padId);
     if(dirRow) dirRow.style.display=(mode==='scroll')?'':'none';
     var speedRow=document.getElementById('speed-row-'+padId);
     if(speedRow) speedRow.style.display=(mode==='scroll')?'':'none';
+    var sAccelRow=document.getElementById('saccel-row-'+padId);
+    if(sAccelRow) sAccelRow.style.display=(mode==='scroll')?'':'none';
+    var glideRow=document.getElementById('glide-row-'+padId);
+    if(glideRow) glideRow.style.display=(mode==='pointer')?'':'none';
+    var ptrSpeedRow=document.getElementById('ptrspeed-row-'+padId);
+    if(ptrSpeedRow) ptrSpeedRow.style.display=(mode==='pointer')?'':'none';
+    var pAccelRow=document.getElementById('paccel-row-'+padId);
+    if(pAccelRow) pAccelRow.style.display=(mode==='pointer')?'':'none';
+    var deadzoneRow=document.getElementById('deadzone-row-'+padId);
+    if(deadzoneRow) deadzoneRow.style.display=(mode==='pointer')?'':'none';
     var diagRow=document.getElementById('diag-row-'+padId);
     if(diagRow) diagRow.style.display=(mode==='dpad')?'':'none';
     // Only a directional pad splits its surface, so only it needs explaining.
@@ -1269,7 +1605,7 @@ R"HTML(
 function inputInfo(id){
   if(byId[id]) return byId[id];
   if(id&&id.indexOf('key:')===0){
-    var lbl=keyLabels[id]||'Key';
+    var lbl=keyLabels[id]||FALLBACK_KEYS[id]||'Key';
     return {id:id,glyph:(lbl.length<=3?lbl:'KEY'),label:lbl,bg:'#4a3524',fg:'#f2d5ab'};
   }
   return byId['none'];
@@ -1374,6 +1710,26 @@ PADS.forEach(function(padId){
   // The slider's value is a stop index; setSpeed wants the percentage.
   if(speedSel) speedSel.addEventListener('input',function(e){
     setSpeed(padId,SPEED_STOPS[parseInt(e.target.value,10)]);
+  });
+  var sAccelSel=document.getElementById('saccel-'+padId);
+  if(sAccelSel) sAccelSel.addEventListener('input',function(e){
+    setSAccel(padId,SACCEL_STOPS[parseInt(e.target.value,10)]);
+  });
+  var glideSel=document.getElementById('glide-'+padId);
+  if(glideSel) glideSel.addEventListener('input',function(e){
+    setGlide(padId,GLIDE_STOPS[parseInt(e.target.value,10)]);
+  });
+  var ptrSpeedSel=document.getElementById('ptrspeed-'+padId);
+  if(ptrSpeedSel) ptrSpeedSel.addEventListener('input',function(e){
+    setPtrSpeed(padId,PTRSPEED_STOPS[parseInt(e.target.value,10)]);
+  });
+  var deadzoneSel=document.getElementById('deadzone-'+padId);
+  if(deadzoneSel) deadzoneSel.addEventListener('input',function(e){
+    setDeadzone(padId,DEADZONE_STOPS[parseInt(e.target.value,10)]);
+  });
+  var pAccelSel=document.getElementById('paccel-'+padId);
+  if(pAccelSel) pAccelSel.addEventListener('input',function(e){
+    setPAccel(padId,PACCEL_STOPS[parseInt(e.target.value,10)]);
   });
 });
 
@@ -1521,7 +1877,13 @@ var TRIGGER_PRESS_MIN=20, TRIGGER_PRESS_MAX=100, TRIGGER_RELEASE_MIN=5, TRIGGER_
 var TRIGGER_MODE_OPTIONS=[
   {id:'standard', label:'Standard (analog only)'},
   {id:'dual',     label:'Dual Stage (adds a full-press button)'},
+  {id:'button',   label:'Button (a click, no analog)'},
 ];
+// What each trigger turns into when it is first made a button, so that choosing
+// the mode does something at once instead of leaving a trigger that does nothing.
+// Steam's desktop layout: the right trigger left-clicks, the left right-clicks.
+var TRIGGER_BUTTON_DEFAULT={LT:'rightMouse',RT:'leftMouse'};
+function trigMode(v){ return (v==='dual'||v==='button')?v:'standard'; }
 var TRIGGER_HAPTIC_OPTIONS=[
   {id:'off',   label:'Off'},
   {id:'press', label:'Click on press'},
@@ -1568,7 +1930,7 @@ function triggerToProfile(p){
 // saved before these settings existed has to read as: a plain analog trigger.
 function triggerFromProfile(p){
   TRIGGERS.forEach(function(t){
-    tmodes[t]=(p[t+'mode']==='dual')?'dual':'standard';
+    tmodes[t]=trigMode(p[t+'mode']);
     tpress[t]=clampPress(trigNum(p[t+'press'],TRIGGER_DEFAULT.press));
     trelease[t]=clampRelease(trigNum(p[t+'release'],TRIGGER_DEFAULT.release),tpress[t]);
     var h=p[t+'haptic'];
@@ -1584,18 +1946,23 @@ function renderTriggerSelects(){
   });
   renderTriggerRows();
 }
-// Everything below the mode dropdown is about the full press, so it only exists
-// in Dual Stage.
+// Everything below the mode dropdown is about the press, so it only exists in
+// Dual Stage and Button.
 function renderTriggerRows(){
   TRIGGERS.forEach(function(t){
-    var dual=(tmodes[t]==='dual');
+    var active=(tmodes[t]!=='standard');
     ['meter-row-'+t,'haptic-row-'+t,'row-'+t+'full'].forEach(function(id){
       var el=trigEl(id);
-      if(el) el.style.display=dual?'':'none';
+      if(el) el.style.display=active?'':'none';
     });
+    // What the help line says about the analog pull depends on the mode.
+    var help=trigEl('meter-help-'+t);
+    if(help&&help.firstChild) help.firstChild.innerHTML='Pull the trigger to watch it. Drag the <b>bright marker</b> to set where the press happens and the dim one to set where it lets go. '+
+      (tmodes[t]==='button'?'The analog pull does not reach the game in this mode.'
+                           :'The analog pull still reaches the game while the full press is held.');
     // A capture still running on a row that has just been hidden would bind
     // something nobody can see.
-    if(!dual&&listening===t+'full') cancelListening();
+    if(!active&&listening===t+'full') cancelListening();
     renderMeter(t);
   });
 }
@@ -1688,7 +2055,10 @@ TRIGGERS.forEach(function(t){
     });
   });
   trigEl('tmode-'+t).addEventListener('change',function(e){
-    tmodes[t]=(e.target.value==='dual')?'dual':'standard';
+    tmodes[t]=trigMode(e.target.value);
+    // A button with nothing to press is a dead trigger, so the first time one is
+    // made a button it picks up the click it is for.
+    if(tmodes[t]==='button'&&bindings[t+'full']==='none') doBind(t+'full',TRIGGER_BUTTON_DEFAULT[t]);
     renderTriggerRows();
   });
   trigEl('thaptic-'+t).addEventListener('change',function(e){
@@ -1715,6 +2085,210 @@ triggerReset();
 // Hide the Dual Stage rows now rather than when the first profile arrives, so
 // they are never on screen for the moment before it does.
 renderTriggerRows();
+)HTML"
+// Scroll style, the ordinary buttons and the Steam desktop preset, in a literal of
+// their own for the same reason as the triggers above. Everything here builds its
+// own markup rather than adding to the page's, which is the other thing that keeps
+// the markup literal within its limit. It runs before the first render, so the
+// rows it adds are in ROWS by then, and profile load/save/reset need no changes
+// for them — they walk ROWS.
+R"HTML(
+// ---- Scroll style ----
+var DEFAULT_STYLES={LPAD:'rotary',RPAD:'swipe'};
+var styles={LPAD:'rotary',RPAD:'swipe'};
+var STYLE_OPTIONS=[
+  {id:'rotary', label:'Circular (turn the pad like a wheel)'},
+  {id:'swipe',  label:'Swipe (drag the content)'},
+];
+// What Natural and Reversed mean depends on the style: a swipe follows the finger,
+// a circle has a direction the thumb turns. The ids are the same either way, so
+// switching style does not lose the choice.
+function dirOptions(padId){
+  return styles[padId]==='rotary'
+    ? [{id:'natural',  label:'Clockwise scrolls down'},
+       {id:'reversed', label:'Clockwise scrolls up'}]
+    : DIR_OPTIONS;
+}
+function setStyle(padId,value){
+  styles[padId]=(value==='rotary')?'rotary':'swipe';
+  fillSelect('dir-'+padId,dirOptions(padId),dirs[padId]);
+}
+PADS.forEach(function(p){
+  var ref=document.getElementById('dir-row-'+p);
+  var row=document.createElement('div');
+  row.className='row mode-row';
+  row.id='style-row-'+p;
+  row.innerHTML='<div class="row-top"><span class="pos-label">Scroll Style</span>'+
+    '<div class="connector"></div><select id="style-'+p+'" class="mode-select"></select></div>';
+  ref.parentNode.insertBefore(row,ref);
+  document.getElementById('style-'+p).addEventListener('change',function(e){
+    setStyle(p,e.target.value);
+  });
+});
+
+// ---- Ordinary buttons ----
+// Each is a rebindable row like a paddle, and its default is the gamepad button it
+// is, so a profile that touches none of them behaves as the controller always did.
+// The Steam button's action is the pad's Guide button.
+INPUTS.push({id:'guide',glyph:'STM',label:'Steam / Guide',bg:'#2a3a2a',fg:'#9ac89a'});
+byId.guide=INPUTS[INPUTS.length-1];
+PICKER_ROWS[5].unshift('guide');
+var BUTTON_GROUPS=[
+  {label:'FACE BUTTONS',rows:[
+    {id:'BTN_A',badge:'A',posTag:'FACE',posLabel:'A Button',def:'A'},
+    {id:'BTN_B',badge:'B',posTag:'FACE',posLabel:'B Button',def:'B'},
+    {id:'BTN_X',badge:'X',posTag:'FACE',posLabel:'X Button',def:'X'},
+    {id:'BTN_Y',badge:'Y',posTag:'FACE',posLabel:'Y Button',def:'Y'}]},
+  {label:'BUMPERS',rows:[
+    {id:'BTN_LB',badge:'L1',posTag:'BUMPER',posLabel:'Left Bumper',def:'LB'},
+    {id:'BTN_RB',badge:'R1',posTag:'BUMPER',posLabel:'Right Bumper',def:'RB'}]},
+  {label:'D-PAD',rows:[
+    {id:'BTN_Up',badge:'&#x2191;',posTag:'UP',posLabel:'D-Pad Up',def:'Up'},
+    {id:'BTN_Down',badge:'&#x2193;',posTag:'DOWN',posLabel:'D-Pad Down',def:'Down'},
+    {id:'BTN_Left',badge:'&#x2190;',posTag:'LEFT',posLabel:'D-Pad Left',def:'Left'},
+    {id:'BTN_Right',badge:'&#x2192;',posTag:'RIGHT',posLabel:'D-Pad Right',def:'Right'}]},
+  {label:'MENU AND STICKS',rows:[
+    {id:'BTN_Menu',badge:'MNU',posTag:'MENU',posLabel:'Menu',def:'menu'},
+    {id:'BTN_View',badge:'VEW',posTag:'VIEW',posLabel:'View',def:'view'},
+    {id:'BTN_Steam',badge:'STM',posTag:'STEAM',posLabel:'Steam Button',def:'guide'},
+    {id:'BTN_L3',badge:'L3',posTag:'STICK',posLabel:'Left Stick Click',def:'L3'},
+    {id:'BTN_R3',badge:'R3',posTag:'STICK',posLabel:'Right Stick Click',def:'R3'}]},
+];
+(function(){
+  // Ahead of the trackpads: these are the controls most people come here to change.
+  var anchor=document.getElementById('mode-LPAD').parentNode.parentNode.parentNode;
+  BUTTON_GROUPS.forEach(function(g){
+    var grp=document.createElement('div');
+    grp.className='group';
+    var html='<div class="group-label">'+g.label+'</div>';
+    g.rows.forEach(function(r){
+      html+='<div id="row-'+r.id+'" class="row"></div>';
+      ROWS.push(r);
+      DEFAULTS[r.id]=r.def;
+    });
+    grp.innerHTML=html;
+    anchor.parentNode.insertBefore(grp,anchor);
+  });
+})();
+// Names for the keys the preset below binds, for the moment before C++ has been
+// asked about them: C++ labels come from the keyboard layout and only cover keys a
+// saved profile already holds. Its names win whenever it has sent one.
+var FALLBACK_KEYS={'key:13':'Enter','key:27':'Esc','key:8':'Backspace','key:32':'Space',
+  'key:9':'Tab','key:33':'Page Up','key:34':'Page Down',
+  'key:37':'Left','key:38':'Up','key:39':'Right','key:40':'Down'};
+
+// ---- Steam desktop layout ----
+// What Steam's own desktop configuration does with a controller: the right pad
+// points and left-clicks, the left pad scrolls by circling and right-clicks, the
+// triggers click, and the buttons are the keys you navigate with. The face
+// buttons and bumpers beyond A and B are choices made here rather than copied from
+// Steam, and are ordinary rows like any other: change whatever does not suit.
+// The Steam button and stick clicks are left as they are.
+var DESKTOP_BUTTONS={BTN_A:'key:13',BTN_B:'key:27',BTN_X:'key:8',BTN_Y:'key:32',
+  BTN_LB:'key:33',BTN_RB:'key:34',
+  BTN_Up:'key:38',BTN_Down:'key:40',BTN_Left:'key:37',BTN_Right:'key:39',
+  BTN_Menu:'key:27',BTN_View:'key:9'};
+function applyDesktopPreset(){
+  cancelListening();
+  BUTTON_GROUPS.forEach(function(g){g.rows.forEach(function(r){
+    bindings[r.id]=DESKTOP_BUTTONS.hasOwnProperty(r.id)?DESKTOP_BUTTONS[r.id]:r.def;
+  });});
+  modes.LPAD='scroll'; styles.LPAD='rotary'; dirs.LPAD='natural'; speeds.LPAD=DEFAULT_SPEEDS.LPAD;
+  bindings.LPAD='rightMouse';
+  modes.RPAD='pointer'; bindings.RPAD='leftMouse';
+  tmodes.LT='button'; bindings.LTfull=TRIGGER_BUTTON_DEFAULT.LT;
+  tmodes.RT='button'; bindings.RTfull=TRIGGER_BUTTON_DEFAULT.RT;
+  flash=null;
+  clearTimeout(flashTimer);
+  renderModeSelects();
+  renderAll();
+}
+(function(){
+  var anchor=document.getElementById('platform').parentNode.parentNode.parentNode;
+  var grp=document.createElement('div');
+  grp.className='group';
+  grp.innerHTML='<div class="group-label">PRESET</div>'+
+    '<div class="row mode-row"><div class="row-top">'+
+    '<span class="pos-label">Steam desktop layout</span><div class="connector"></div>'+
+    '<button class="btn-rebind" id="btn-desktop-preset">Load</button></div>'+
+    '<div class="mod-note">Fills in the settings below the way Steam sets up a controller for '+
+    'the desktop: <b>A</b> is Enter, <b>B</b> and <b>Menu</b> are Esc, the d-pad is the arrow keys, '+
+    'the triggers click the mouse, and the left pad scrolls when you circle it. '+
+    'Nothing changes until you press <b>Apply</b>.</div></div>';
+  anchor.parentNode.insertBefore(grp,anchor);
+  document.getElementById('btn-desktop-preset').onclick=applyDesktopPreset;
+})();
+
+// ---- Button combos ("chords") ----
+// Hold two inputs together and a bound action fires instead of — not
+// alongside — whatever either does alone, the way clicking both sticks
+// together opens the on-screen keyboard under Steam. See ChordConfig.h for
+// the backend half of this. CHORD_SLOT_COUNT must match kChordSlotCount
+// there; the "Chord0"/"Chord0A"/"Chord0B" wire ids below must match the ones
+// RemapWindow.cpp's apply handler and ProfileJson read and write.
+var CHORD_SLOT_COUNT=6;
+var CHORD_MEMBERS=[
+  {id:'none',label:'— none —'},
+  {id:'BTN_A',label:'A'},{id:'BTN_B',label:'B'},{id:'BTN_X',label:'X'},{id:'BTN_Y',label:'Y'},
+  {id:'BTN_LB',label:'Left Bumper'},{id:'BTN_RB',label:'Right Bumper'},
+  {id:'BTN_Up',label:'D-Pad Up'},{id:'BTN_Down',label:'D-Pad Down'},
+  {id:'BTN_Left',label:'D-Pad Left'},{id:'BTN_Right',label:'D-Pad Right'},
+  {id:'BTN_Menu',label:'Menu'},{id:'BTN_View',label:'View'},
+  {id:'BTN_L3',label:'Left Stick Click'},{id:'BTN_R3',label:'Right Stick Click'},
+  {id:'BTN_Steam',label:'Steam Button'},
+  {id:'L4',label:'L4 Paddle'},{id:'L5',label:'L5 Paddle'},
+  {id:'R4',label:'R4 Paddle'},{id:'R5',label:'R5 Paddle'},
+  {id:'LPAD',label:'Left Pad Click'},{id:'RPAD',label:'Right Pad Click'}
+];
+// Keep in step with ControllerProfile's own chords[] defaults in
+// TrackpadConfig.h: slot 0 is both pad clicks (middle-click), slot 1 is both
+// stick clicks (the on-screen keyboard). The rest start unconfigured.
+var DEFAULT_CHORD_A={0:'LPAD',1:'BTN_L3'};
+var DEFAULT_CHORD_B={0:'RPAD',1:'BTN_R3'};
+function defaultChordA(i){ return DEFAULT_CHORD_A.hasOwnProperty(i)?DEFAULT_CHORD_A[i]:'none'; }
+function defaultChordB(i){ return DEFAULT_CHORD_B.hasOwnProperty(i)?DEFAULT_CHORD_B[i]:'none'; }
+var chordA={}, chordB={};
+for(var _ci=0;_ci<CHORD_SLOT_COUNT;_ci++){
+  chordA[_ci]=defaultChordA(_ci);
+  chordB[_ci]=defaultChordB(_ci);
+  // The action rides the same row/capture/picker machinery as a paddle or a
+  // trigger's full press — see ROWS and renderRow above — so only the two
+  // member dropdowns below need markup and wiring of their own.
+  ROWS.push({id:'Chord'+_ci,badge:'+',posTag:'COMBO',posLabel:'Then'});
+  DEFAULTS['Chord'+_ci]=_ci===0?'mouse:middle':(_ci===1?'touchKeyboard':'none');
+}
+function setChordMember(which,i,value){
+  if(which==='a') chordA[i]=value; else chordB[i]=value;
+}
+(function(){
+  var settings=document.getElementById('settings');
+  var grp=document.createElement('div');
+  grp.className='group';
+  var html='<div class="group-label">BUTTON COMBOS</div>'
+    +'<div class="mod-note">Hold two inputs down together for a third action, '
+    +'instead of whatever either does alone — the way clicking both sticks '
+    +'opens the keyboard under Steam. Set either side of a combo to '
+    +'“— none —” to turn it off.</div>';
+  for(var i=0;i<CHORD_SLOT_COUNT;i++){
+    html+='<div class="row mode-row">'
+      +'<div class="row-top">'
+      +'<select class="mode-select combo-select" id="chordA-'+i+'"></select>'
+      +'<span class="combo-plus">+</span>'
+      +'<select class="mode-select combo-select" id="chordB-'+i+'"></select>'
+      +'</div></div>'
+      +'<div id="row-Chord'+i+'" class="row"></div>';
+  }
+  grp.innerHTML=html;
+  settings.appendChild(grp);
+  for(var j=0;j<CHORD_SLOT_COUNT;j++){
+    (function(i){
+      var aSel=document.getElementById('chordA-'+i);
+      var bSel=document.getElementById('chordB-'+i);
+      if(aSel) aSel.addEventListener('change',function(e){setChordMember('a',i,e.target.value);});
+      if(bSel) bSel.addEventListener('change',function(e){setChordMember('b',i,e.target.value);});
+    })(j);
+  }
+})();
 )HTML"
 R"HTML(
 renderAll();
@@ -1999,6 +2573,13 @@ void RemapWindow::AppendOrphanProfiles() {
 
     const size_t enumerated = m_games.size();
     for (const auto& [id, profile] : m_gameProfiles) {
+        // The desktop profile is pinned unconditionally under its own
+        // reserved key (see ProfilesJson) and was never given a PickerEntry
+        // or a token to begin with — it is not a game the enumeration could
+        // ever have found, so treating it as an orphan would duplicate it in
+        // the picker every time, permanently "missing" since "__desktop__"
+        // is not a path AppendOrphanProfiles' own IdStillOnDisk could find.
+        if (id == GameProfiles::kDesktopProfileId) continue;
         bool found = false;
         for (size_t i = 0; i < enumerated; ++i) {
             if (_wcsicmp(m_games[i].game.id.c_str(), id.c_str()) == 0) {
@@ -2497,10 +3078,21 @@ void RemapWindow::OnWebMessage(const std::wstring& raw) {
             s.click     = BackButtonBinding::FromId(JsonStr(msg, id));
             s.mode      = TrackpadModeFromId(JsonStr(msg, id + "mode"));
             s.scrollDir = ScrollDirectionFromId(JsonStr(msg, id + "dir"));
+            s.scrollStyle = ScrollStyleFromId(JsonStr(msg, id + "style"));
             // strtoul yields 0 for anything unparseable, which is the same
             // "unset" the registry uses and lands on the default.
             s.scrollSpeed = ScrollSpeedFromDword(static_cast<uint32_t>(
                 std::strtoul(JsonStr(msg, id + "speed").c_str(), nullptr, 10)));
+            s.scrollAccel = ScrollAccelFromDword(static_cast<uint32_t>(
+                std::strtoul(JsonStr(msg, id + "saccel").c_str(), nullptr, 10)));
+            s.glideStrength = GlideStrengthFromDword(static_cast<uint32_t>(
+                std::strtoul(JsonStr(msg, id + "glide").c_str(), nullptr, 10)));
+            s.pointerSpeed = PointerSpeedFromDword(static_cast<uint32_t>(
+                std::strtoul(JsonStr(msg, id + "ptrspeed").c_str(), nullptr, 10)));
+            s.pointerAccel = PointerAccelFromDword(static_cast<uint32_t>(
+                std::strtoul(JsonStr(msg, id + "paccel").c_str(), nullptr, 10)));
+            s.pointerDeadzone = PointerDeadzoneFromDword(static_cast<uint32_t>(
+                std::strtoul(JsonStr(msg, id + "deadzone").c_str(), nullptr, 10)));
             s.diagonals = DiagonalModeFromId(JsonStr(msg, id + "diag"));
             s.touch     = BackButtonBinding::FromId(JsonStr(msg, id + "touch"));
             s.up        = BackButtonBinding::FromId(JsonStr(msg, id + "up"));
@@ -2510,6 +3102,16 @@ void RemapWindow::OnWebMessage(const std::wstring& raw) {
         };
         readPad("LPAD", cfg.leftPad);
         readPad("RPAD", cfg.rightPad);
+
+        // One binding per ordinary button, under the id the page keys it by.
+        // The page always sends every one; a key it did not send would read as
+        // "Off" and silently deaden a button, which is why a page that predates
+        // them is not something this has to tolerate — it is served by this
+        // same executable.
+        for (size_t i = 0; i < kPadButtonCount; ++i) {
+            const auto b = static_cast<PadButton>(i);
+            cfg.buttons.At(b) = BackButtonBinding::FromId(JsonStr(msg, PadButtonWireId(b)));
+        }
 
         // Same flat keys as the pads, under the trigger's own id. The bare id
         // is never sent — only "LTmode", "LTfull" and the rest — so the reader's
@@ -2528,8 +3130,28 @@ void RemapWindow::OnWebMessage(const std::wstring& raw) {
         readTrigger("LT", cfg.leftTrigger);
         readTrigger("RT", cfg.rightTrigger);
 
+        // Button combos. The action rides the same "ChordN" key as a paddle or
+        // a trigger's full press — the page sends it because the row was
+        // pushed into ROWS, but reading it into the profile is this one line
+        // same as any of those. The two member dropdowns are not rows at all,
+        // so they need their own keys, "ChordNA"/"ChordNB".
+        for (size_t ci = 0; ci < kChordSlotCount; ++ci) {
+            const std::string id = "Chord" + std::to_string(ci);
+            cfg.chords[ci].a = ChordMemberFromId(JsonStr(msg, id + "A"));
+            cfg.chords[ci].b = ChordMemberFromId(JsonStr(msg, id + "B"));
+            cfg.chords[ci].action = BackButtonBinding::FromId(JsonStr(msg, id));
+        }
+
         const std::string token = JsonStr(msg, "game");
-        if (PickerEntry* entry = EntryForToken(token)) {
+        if (token == "desktop") {
+            // The one profile that is not a game at all — see
+            // GameProfiles::kDesktopProfileId. Never goes through
+            // EntryForToken: it carries no PickerEntry, the same way the
+            // default profile's own empty token does not.
+            cfg.displayName = L"Desktop";
+            m_gameProfiles[GameProfiles::kDesktopProfileId] = cfg;
+            if (m_applyCallback) m_applyCallback(GameProfiles::kDesktopProfileId, cfg);
+        } else if (PickerEntry* entry = EntryForToken(token)) {
             const std::wstring gameId = entry->game.id;
             // Captured here because this is the only place both halves
             // are in hand: the picker knows the friendly name, and
@@ -2548,7 +3170,11 @@ void RemapWindow::OnWebMessage(const std::wstring& raw) {
         // Never carries an empty token: the page does not offer removal for
         // the default profile, which has to exist for anything else to fall
         // back to.
-        if (PickerEntry* entry = EntryForToken(JsonStr(msg, "game"))) {
+        const std::string token = JsonStr(msg, "game");
+        if (token == "desktop") {
+            m_gameProfiles.erase(GameProfiles::kDesktopProfileId);
+            if (m_deleteCallback) m_deleteCallback(GameProfiles::kDesktopProfileId);
+        } else if (PickerEntry* entry = EntryForToken(token)) {
             const std::wstring gameId = entry->game.id;
             m_gameProfiles.erase(gameId);
             if (m_deleteCallback) m_deleteCallback(gameId);
@@ -2628,7 +3254,13 @@ std::wstring RemapWindow::ProfileJson(const ControllerProfile& p) {
         return L"\"" + k + L"\":\"" + wid(s.click) + L"\","
                L"\"" + k + L"mode\":\"" + narrow(TrackpadModeId(s.mode)) + L"\","
                L"\"" + k + L"dir\":\"" + narrow(ScrollDirectionId(s.scrollDir)) + L"\","
+               L"\"" + k + L"style\":\"" + narrow(ScrollStyleId(s.scrollStyle)) + L"\","
                L"\"" + k + L"speed\":\"" + std::to_wstring(s.scrollSpeed) + L"\","
+               L"\"" + k + L"saccel\":\"" + std::to_wstring(s.scrollAccel) + L"\","
+               L"\"" + k + L"glide\":\"" + std::to_wstring(s.glideStrength) + L"\","
+               L"\"" + k + L"ptrspeed\":\"" + std::to_wstring(s.pointerSpeed) + L"\","
+               L"\"" + k + L"paccel\":\"" + std::to_wstring(s.pointerAccel) + L"\","
+               L"\"" + k + L"deadzone\":\"" + std::to_wstring(s.pointerDeadzone) + L"\","
                L"\"" + k + L"diag\":\"" + narrow(DiagonalModeId(s.diagonals)) + L"\","
                L"\"" + k + L"touch\":\"" + wid(s.touch) + L"\","
                L"\"" + k + L"up\":\"" + wid(s.up) + L"\","
@@ -2646,6 +3278,22 @@ std::wstring RemapWindow::ProfileJson(const ControllerProfile& p) {
                L"\"" + k + L"haptic\":\"" + narrow(TriggerHapticId(t.haptic)) + L"\","
                L"\"" + k + L"full\":\"" + wid(t.full) + L"\"";
     };
+    // The ordinary buttons, each under its row id.
+    std::wstring buttons;
+    for (size_t i = 0; i < kPadButtonCount; ++i) {
+        const auto b = static_cast<PadButton>(i);
+        buttons += L"\"" + narrow(PadButtonWireId(b)) + L"\":\"" + wid(p.buttons.Get(b)) + L"\",";
+    }
+    // Button combos: the action under its row id like a paddle's, the two
+    // members under their own "ChordNA"/"ChordNB" keys — see the apply
+    // handler's matching read of all three.
+    std::wstring chords;
+    for (size_t i = 0; i < kChordSlotCount; ++i) {
+        const std::wstring k = L"Chord" + std::to_wstring(i);
+        chords += L"\"" + k + L"\":\"" + wid(p.chords[i].action) + L"\","
+                  L"\"" + k + L"A\":\"" + narrow(ChordMemberId(p.chords[i].a)) + L"\","
+                  L"\"" + k + L"B\":\"" + narrow(ChordMemberId(p.chords[i].b)) + L"\",";
+    }
     return L"{\"useDefault\":\""
                + std::wstring(p.useDefaultMappings ? L"1" : L"0")
                + L"\","
@@ -2656,6 +3304,8 @@ std::wstring RemapWindow::ProfileJson(const ControllerProfile& p) {
                L"\"L5\":\"" + wid(p.back.l5) + L"\","
                L"\"R4\":\"" + wid(p.back.r4) + L"\","
                L"\"R5\":\"" + wid(p.back.r5) + L"\","
+             + buttons
+             + chords
              + pad(L"LPAD", p.leftPad) + L","
              + pad(L"RPAD", p.rightPad) + L","
              + trigger(L"LT", p.leftTrigger) + L","
@@ -2692,10 +3342,14 @@ void RemapWindow::SendInitState() {
                 addLabel(*b);
         for (const auto* b : { &p.back.l4, &p.back.l5, &p.back.r4, &p.back.r5 })
             addLabel(*b);
+        for (const auto& b : p.buttons.map)
+            addLabel(b);
         // Stored under a trigger that is currently Standard still needs a name
         // ready for when it is switched to Dual Stage.
         addLabel(p.leftTrigger.full);
         addLabel(p.rightTrigger.full);
+        for (const auto& c : p.chords)
+            addLabel(c.action);
     };
     addProfileLabels(m_config);
     for (const auto& [id, cfg] : m_gameProfiles)
@@ -2748,6 +3402,12 @@ std::wstring RemapWindow::GamesJson() const {
 // default profile's bindings when it is first selected.
 std::wstring RemapWindow::ProfilesJson() const {
     std::wstring json = L"\"\":" + ProfileJson(m_config);
+    // The desktop profile under its own reserved key, exactly like the
+    // default's empty one above — it has no PickerEntry/token to be found by
+    // the loop below.
+    if (auto it = m_gameProfiles.find(GameProfiles::kDesktopProfileId);
+            it != m_gameProfiles.end())
+        json += L",\"desktop\":" + ProfileJson(it->second);
     for (const auto& entry : m_games) {
         auto it = m_gameProfiles.find(entry.game.id);
         if (it == m_gameProfiles.end()) continue;

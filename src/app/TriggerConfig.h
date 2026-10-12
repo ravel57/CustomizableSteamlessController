@@ -26,6 +26,12 @@
 enum class TriggerMode : uint8_t {
     Standard  = 0,  // analog passthrough only
     DualStage = 1,  // analog passthrough, plus a binding held past the press point
+    // The trigger is a button and nothing else: a binding held past the press
+    // point, and no analog value reaches the game at all. This is what makes a
+    // trigger a mouse click on the desktop — left as dual-stage the pull would
+    // also arrive as a half-pressed trigger, which a desktop has no use for and
+    // a game would take as a pull.
+    Button    = 2,
     COUNT
 };
 
@@ -56,10 +62,16 @@ inline TriggerHaptic TriggerHapticFromDword(uint32_t v) {
 // including an empty or missing value — lands on the safe default, so a page
 // that predates a setting cannot turn dual-stage on by omission.
 inline const char* TriggerModeId(TriggerMode m) {
-    return m == TriggerMode::DualStage ? "dual" : "standard";
+    switch (m) {
+    case TriggerMode::DualStage: return "dual";
+    case TriggerMode::Button:    return "button";
+    default:                     return "standard";
+    }
 }
 inline TriggerMode TriggerModeFromId(const std::string& id) {
-    return id == "dual" ? TriggerMode::DualStage : TriggerMode::Standard;
+    if (id == "dual")   return TriggerMode::DualStage;
+    if (id == "button") return TriggerMode::Button;
+    return TriggerMode::Standard;
 }
 
 inline const char* TriggerHapticId(TriggerHaptic h) {
@@ -131,20 +143,30 @@ struct TriggerSettings {
     bool operator!=(const TriggerSettings& o) const { return !(*this == o); }
 
     bool IsDualStage() const { return mode == TriggerMode::DualStage; }
+    bool IsButton()    const { return mode == TriggerMode::Button; }
+
+    // Whether the trigger has a press point at all. Both of the modes that carry
+    // a binding share the detector, the haptic and the dispatch; they differ only
+    // in whether the analog pull is also reported, which is SuppressesAnalog.
+    bool UsesFullPress() const { return IsDualStage() || IsButton(); }
+
+    // The analog value is withheld from the virtual pad, so the pull reaches
+    // nothing but the binding.
+    bool SuppressesAnalog() const { return IsButton(); }
 
     // The binding to hold while the trigger is past its press point, or nothing
-    // at all outside dual-stage mode. Reading it through here rather than the
-    // field is what stops a binding left over from an earlier mode firing from
-    // behind hidden UI.
+    // at all in Standard mode. Reading it through here rather than the field is
+    // what stops a binding left over from an earlier mode firing from behind
+    // hidden UI.
     BackButtonBinding EffectiveFull() const {
-        return IsDualStage() ? full : BackButtonBinding{};
+        return UsesFullPress() ? full : BackButtonBinding{};
     }
 
     bool ClicksOnPress() const {
-        return IsDualStage() && haptic != TriggerHaptic::Off;
+        return UsesFullPress() && haptic != TriggerHaptic::Off;
     }
     bool ClicksOnRelease() const {
-        return IsDualStage() && haptic == TriggerHaptic::PressAndRelease;
+        return UsesFullPress() && haptic == TriggerHaptic::PressAndRelease;
     }
 };
 
@@ -158,8 +180,8 @@ class TriggerFullPress {
 public:
     // raw is 0..kTriggerRawMax. Returns whether the full press is held.
     bool Update(int raw, const TriggerSettings& s) {
-        if (!s.IsDualStage()) {
-            // Leaving dual-stage mode while held reports a release this frame,
+        if (!s.UsesFullPress()) {
+            // Leaving dual-stage or button mode while held reports a release this frame,
             // which is what lets the dispatcher let go of what the press sent.
             held_ = false;
             return false;

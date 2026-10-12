@@ -15,4 +15,12 @@ namespace GameProfiles {
 std::map<std::wstring, ControllerProfile> Load();
 void Save(const std::map<std::wstring, ControllerProfile>& profiles);
 
+// Reserved id for the one profile that is not a game at all: whatever applies
+// when the foreground is the Windows shell rather than something the user
+// installed (see GameLibrary::IsSystemProgram). Lives in the same map and
+// goes through the same load/save/match machinery as any other per-"game"
+// profile — nothing here can confuse it for a real one, since no exe path,
+// steam:// URI, aumid: or dir: prefix can ever equal this literal string.
+inline constexpr wchar_t kDesktopProfileId[] = L"__desktop__";
+
 }

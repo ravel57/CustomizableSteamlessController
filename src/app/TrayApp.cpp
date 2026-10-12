@@ -570,6 +570,21 @@ std::wstring TrayApp::MatchProfile(const ForegroundIdentity& id) const {
     static constexpr size_t  kSteamPrefixLen = ARRAYSIZE(kSteamPrefix) - 1;
     static constexpr size_t  kDirPrefixLen   = 4;  // "dir:"
 
+    // The Windows shell itself — the same rule the picker uses to refuse a
+    // profile for explorer.exe, the frame host or the touch keyboard (see
+    // GameLibrary::IsSystemProgram) — is never a game, so it is resolved here
+    // rather than falling through to the per-game loop below. Checked before
+    // that loop so a profile named for one of those binaries, which could
+    // never be created through the UI but could in principle be hand-edited
+    // into the registry, cannot shadow it.
+    //
+    // Falls back through SelectProfile exactly like a deleted or never-saved
+    // per-game profile does: returning this id when nothing is stored under
+    // it yet is not a special case, since the caller already turns an id with
+    // no entry in m_gameProfiles into the default profile.
+    if (GameLibrary::IsSystemProgram(id.exePath))
+        return GameProfiles::kDesktopProfileId;
+
     // Resolved once rather than per profile: the lookup walks every known
     // Steam install, and the answer cannot differ between profiles.
     const std::wstring steamAppId = m_steamApps.AppIdForPath(id.exePath);
@@ -1996,7 +2011,16 @@ void TrayApp::LoadSettings() {
             pad.mode      = TrackpadModeFromDword(readDw(name(L"Mode").c_str(), 0));
             pad.click     = binding(L"Click", BackButtonAction::None);
             pad.scrollDir = ScrollDirectionFromDword(readDw(name(L"ScrollDir").c_str(), 0));
+            // Absent means Swipe, not the fresh-install Rotary: a pad saved
+            // before this existed scrolled by swiping and keeps doing so.
+            pad.scrollStyle = ScrollStyleFromDword(readDw(name(L"ScrollStyle").c_str(), 0));
             pad.scrollSpeed = ScrollSpeedFromDword(readDw(name(L"ScrollSpeed").c_str(), 0));
+            pad.scrollAccel = ScrollAccelFromDword(readDw(name(L"ScrollAccel").c_str(), 0));
+            pad.glideStrength = GlideStrengthFromDword(readDw(name(L"GlideStrength").c_str(), 0));
+            pad.pointerSpeed = PointerSpeedFromDword(readDw(name(L"PointerSpeed").c_str(), 0));
+            pad.pointerAccel = PointerAccelFromDword(readDw(name(L"PointerAccel").c_str(), 0));
+            pad.pointerDeadzone = PointerDeadzoneFromDword(
+                readDw(name(L"PointerDeadzone").c_str(), 0));
             pad.touch     = binding(L"Touch", BackButtonAction::None);
             pad.up        = binding(L"Up",    BackButtonAction::DPadUp);
             pad.down      = binding(L"Down",  BackButtonAction::DPadDown);
@@ -2017,6 +2041,17 @@ void TrayApp::LoadSettings() {
         };
         profile.leftTrigger  = ReadTriggerSettings(L"LeftTrigger",  readTriggerDw);
         profile.rightTrigger = ReadTriggerSettings(L"RightTrigger", readTriggerDw);
+        // The same goes for the ordinary buttons: absent reads back as each
+        // button being itself, which is what an install that predates them did.
+        profile.buttons = ReadButtonSettings(readTriggerDw);
+        // And for the combos: absent reads each slot back as
+        // ControllerProfile's own default for it, the two shipped combos
+        // included, which is what an install that predates them gets instead
+        // of starting with none at all.
+        for (size_t ci = 0; ci < kChordSlotCount; ++ci) {
+            profile.chords[ci] = ReadChordBinding(
+                (L"Chord" + std::to_wstring(ci)).c_str(), profile.chords[ci], readTriggerDw);
+        }
     }
 
     m_defaultProfile = profile;
@@ -2092,7 +2127,13 @@ void TrayApp::SaveSettings() {
         writeDw(name(L"Mode").c_str(),      static_cast<DWORD>(pad.mode));
         writeDw(name(L"Click").c_str(),     pad.click.Pack());
         writeDw(name(L"ScrollDir").c_str(), static_cast<DWORD>(pad.scrollDir));
+        writeDw(name(L"ScrollStyle").c_str(), static_cast<DWORD>(pad.scrollStyle));
         writeDw(name(L"ScrollSpeed").c_str(), pad.scrollSpeed);
+        writeDw(name(L"ScrollAccel").c_str(), pad.scrollAccel);
+        writeDw(name(L"GlideStrength").c_str(), pad.glideStrength);
+        writeDw(name(L"PointerSpeed").c_str(), pad.pointerSpeed);
+        writeDw(name(L"PointerAccel").c_str(), pad.pointerAccel);
+        writeDw(name(L"PointerDeadzone").c_str(), pad.pointerDeadzone);
         writeDw(name(L"Touch").c_str(),     pad.touch.Pack());
         writeDw(name(L"Up").c_str(),        pad.up.Pack());
         writeDw(name(L"Down").c_str(),      pad.down.Pack());
@@ -2104,6 +2145,10 @@ void TrayApp::SaveSettings() {
     writePad(L"RightPad", profile.rightPad);
     WriteTriggerSettings(L"LeftTrigger",  profile.leftTrigger,  writeDw);
     WriteTriggerSettings(L"RightTrigger", profile.rightTrigger, writeDw);
+    for (size_t ci = 0; ci < kChordSlotCount; ++ci)
+        WriteChordBinding((L"Chord" + std::to_wstring(ci)).c_str(),
+                          profile.chords[ci], writeDw);
+    WriteButtonSettings(profile.buttons, writeDw);
     // Written last and unconditionally: its presence is what tells the next
     // launch the per-pad values above are authoritative.
     writeDw(L"PadsMigrated", 1);

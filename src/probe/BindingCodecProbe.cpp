@@ -34,6 +34,7 @@ int main() {
     RoundTrip("Win+G",              B::FromKey('G', B::ModWin));
     RoundTrip("action A",           B::FromAction(BackButtonAction::A));
     RoundTrip("touch keyboard",     B::FromAction(BackButtonAction::TouchKeyboard));
+    RoundTrip("steam / guide",      B::FromAction(BackButtonAction::Guide));
     RoundTrip("middle mouse",       B::FromMouseButton(B::MouseButtonCode::Middle));
 
     printf("\nValues written before modifiers existed\n");

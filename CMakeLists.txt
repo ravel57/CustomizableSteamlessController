@@ -110,6 +110,19 @@ if (MSVC)
     set_target_properties(TriggerDetectorProbe PROPERTIES LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE")
 endif()
 
+# Button remapping and circular scrolling checks — a button's default and what a
+# remapped one dispatches, that profiles written before buttons were configurable
+# read back unchanged, and the angle arithmetic behind the rotary scroll. No
+# controller needed.
+add_executable(ButtonRemapProbe
+    src/probe/ButtonRemapProbe.cpp
+)
+target_include_directories(ButtonRemapProbe PRIVATE src)
+if (MSVC)
+    target_compile_options(ButtonRemapProbe PRIVATE /W4 /WX /utf-8)
+    set_target_properties(ButtonRemapProbe PROPERTIES LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE")
+endif()
+
 # Virtual gamepad bus probe — dumps every bus the ViGEm client can see, which
 # is the one question a "vigem_connect failed" report cannot answer on its own
 add_executable(ViGEmBusProbe

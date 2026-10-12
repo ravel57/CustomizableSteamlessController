@@ -15,6 +15,12 @@ void TrackpadInput::SetMode(TrackpadMode mode) {
     Reset();  // carried remainders and touch state mean nothing to the new mode
 }
 
+void TrackpadInput::SetScrollStyle(ScrollStyle style) {
+    if (style == m_scrollStyle) return;
+    m_scrollStyle = style;
+    Reset();  // an angle and a position are not interchangeable references
+}
+
 void TrackpadInput::SetDiagonals(DiagonalMode d) {
     if (d == m_diagonals) return;
     m_diagonals = d;
@@ -34,8 +40,18 @@ void TrackpadInput::Reset() {
     m_remY       = 0.0f;
     m_scrollRemX = 0.0f;
     m_scrollRemY = 0.0f;
+    m_rotary.Reset();
     m_haveRef    = false;
     m_travelSent = 0;
+
+    m_haveScrollClock = false;
+    m_rotaryAccum     = 0.0f;
+
+    m_velX = 0.0f;
+    m_velY = 0.0f;
+    m_haveFlingVel     = false;
+    m_flinging         = false;
+    m_haveInertiaClock = false;
 
     m_dirs           = DirNone;
     m_sector         = -1;
@@ -70,12 +86,13 @@ void TrackpadInput::NoteMovementSent(long px, bool haveCursor,
     }
 }
 
-void TrackpadInput::UpdatePointer(int dx, int dy) {
+void TrackpadInput::UpdatePointer(int dx, int dy, float accel) {
     // Carry sub-pixel remainders between frames — per-frame deltas scaled by
     // sensitivity are often below one pixel, and truncating them each frame
     // would discard slow movement entirely.
-    const float fx = static_cast<float>(dx) * SENSITIVITY + m_remX;
-    const float fy = static_cast<float>(dy) * SENSITIVITY + m_remY;
+    const float sens = PointerSensitivity() * accel;
+    const float fx = static_cast<float>(dx) * sens + m_remX;
+    const float fy = static_cast<float>(dy) * sens + m_remY;
     const LONG  ix = static_cast<LONG>(fx);
     const LONG  iy = static_cast<LONG>(fy);
     m_remX = fx - static_cast<float>(ix);
@@ -94,6 +111,101 @@ void TrackpadInput::UpdatePointer(int dx, int dy) {
     if (InputInjection::Send(input, "trackpad-move")) {
         NoteMovementSent(std::labs(ix) + std::labs(iy),
                          haveBefore, before.x, before.y);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Trackball-style glide — the cursor keeps moving briefly after a fast swipe
+// lifts, decaying back to a stop, the way Steam's own trackpad-as-mouse feels
+// and a spun trackball behaves. Three steps, one per touched/untouched phase:
+//
+//   touching, moving   -> SampleFlingVelocity folds this frame into a running
+//                          estimate of how fast the swipe currently is.
+//   the lift itself    -> StartFling hands that estimate to the glide, or
+//                          drops it if the lift was too slow to be a flick.
+//   coasting, no touch -> StepFling moves the cursor by the decaying
+//                          velocity each frame until it is imperceptible.
+// ---------------------------------------------------------------------------
+
+// Folds one touched frame's raw delta into the smoothed velocity estimate.
+// Called every frame the finger is down and has moved since the last one, so
+// by the time the finger lifts the estimate reflects the swipe as it actually
+// was in its last moments, not a single possibly-noisy sample.
+void TrackpadInput::SampleFlingVelocity(int dxRaw, int dyRaw) {
+    const auto now = std::chrono::steady_clock::now();
+    if (!m_haveInertiaClock) {
+        // First touched frame after a press: nothing to diff against yet.
+        m_lastInertiaAt    = now;
+        m_haveInertiaClock = true;
+        return;
+    }
+    const double dt = std::chrono::duration<double>(now - m_lastInertiaAt).count();
+    m_lastInertiaAt = now;
+    if (dt <= 0.0) return;
+
+    const float instVx = static_cast<float>(dxRaw) / static_cast<float>(dt);
+    const float instVy = static_cast<float>(dyRaw) / static_cast<float>(dt);
+
+    if (!m_haveFlingVel) {
+        m_velX = instVx;
+        m_velY = instVy;
+        m_haveFlingVel = true;
+    } else {
+        m_velX = m_velX * FLING_VELOCITY_SMOOTHING + instVx * (1.0f - FLING_VELOCITY_SMOOTHING);
+        m_velY = m_velY * FLING_VELOCITY_SMOOTHING + instVy * (1.0f - FLING_VELOCITY_SMOOTHING);
+    }
+}
+
+// The lift itself. A deliberate flick keeps going; a thumb that was already
+// slowing down, or just resting, when it lifted is left exactly where it
+// stopped — the same distinction a real trackball makes between a spin and a
+// hand simply pulling away.
+void TrackpadInput::StartFling() {
+    const float speed = m_haveFlingVel ? std::hypot(m_velX, m_velY) : 0.0f;
+    m_haveInertiaClock = false;
+
+    if (speed < FLING_MIN_SPEED) {
+        m_flinging     = false;
+        m_haveFlingVel = false;
+        return;
+    }
+
+    // Scaled here rather than baked into the decay constant, so recognising a
+    // flick always uses the same speed regardless of how far the setting then
+    // lets it coast.
+    const float strength = static_cast<float>(m_glideStrength) / 100.0f;
+    m_velX *= strength;
+    m_velY *= strength;
+
+    m_flinging         = true;
+    m_lastInertiaAt    = std::chrono::steady_clock::now();
+    m_haveInertiaClock = true;
+}
+
+// One coasting frame: decays the carried velocity by however long it has
+// been since the last one, moves the cursor by what that velocity covers in
+// that time, and stops the glide once it would no longer be visible.
+void TrackpadInput::StepFling() {
+    const auto now = std::chrono::steady_clock::now();
+    const double dt = m_haveInertiaClock
+        ? std::chrono::duration<double>(now - m_lastInertiaAt).count()
+        : 0.0;
+    m_lastInertiaAt    = now;
+    m_haveInertiaClock = true;
+    if (dt <= 0.0) return;
+
+    const float decay = std::pow(FLING_DECAY_PER_SEC, static_cast<float>(dt));
+    m_velX *= decay;
+    m_velY *= decay;
+
+    const int dx = static_cast<int>(m_velX * static_cast<float>(dt));
+    const int dy = static_cast<int>(m_velY * static_cast<float>(dt));
+    if (dx != 0 || dy != 0) UpdatePointer(dx, -dy);  // pad Y up, screen Y down
+
+    if (std::hypot(m_velX, m_velY) < FLING_STOP_SPEED) {
+        m_flinging     = false;
+        m_haveFlingVel = false;
+        m_velX = m_velY = 0.0f;
     }
 }
 
@@ -117,6 +229,106 @@ float TrackpadInput::ScrollScale() const {
          * (static_cast<float>(m_scrollSpeed) / 100.0f);
 }
 
+// The rotary equivalent of ScrollScale, with the same two corrections for the same
+// reasons: the machine's lines-per-notch setting is divided back out so a circle
+// scrolls the same distance everywhere, and the user's speed is applied after it
+// so 100% means the calibrated feel and not "whatever this machine does".
+float TrackpadInput::RotaryScale() const {
+    const float correction =
+        InputInjection::WheelCorrection(InputInjection::WheelLinesPerNotch());
+    return kRotaryWheelUnitsPerRadian * correction
+         * (static_cast<float>(m_scrollSpeed) / 100.0f);
+}
+
+// dt since the last call, for whichever scroll style is currently active.
+// Zero on the first call after Reset (or after a gap this style's own code
+// treats as a fresh start) — a speed needs two points, not one, and a bogus
+// huge dt from measuring across that gap would read as "not moving at all"
+// for one frame rather than something worth guarding against harder.
+float TrackpadInput::ScrollDt() {
+    const auto now = std::chrono::steady_clock::now();
+    if (!m_haveScrollClock) {
+        m_lastScrollAt    = now;
+        m_haveScrollClock = true;
+        return 0.0f;
+    }
+    const float dt = std::chrono::duration<float>(now - m_lastScrollAt).count();
+    m_lastScrollAt = now;
+    return dt;
+}
+
+// See the constants block in the header for what this curve is shaped to do
+// and why. pow() rather than a lookup table: the three domains hand it speeds
+// in completely different units (raw pad units/second for a swipe or the
+// pointer, radians/second for a turn), and a table would need one per unit
+// instead of one curve parameterised by what "1x" means for whichever one is
+// asking.
+//
+// strengthPercent blends the curve towards flat: 0 always returns 1x
+// regardless of speed (today's fixed scale, unchanged), 100 is the curve
+// exactly as calibrated, and above that exaggerates it. Applied after the
+// floor/ceiling rather than before, so the strength setting scales how far
+// from 1x the result sits rather than stretching the curve's own shape.
+float TrackpadInput::SpeedAccelFactor(float speed, float neutral, uint32_t strengthPercent) {
+    float curve = ACCEL_MIN;
+    if (neutral > 0.0f && speed > 0.0f) {
+        curve = std::pow(speed / neutral, ACCEL_GAMMA);
+        if (curve < ACCEL_MIN) curve = ACCEL_MIN;
+        if (curve > ACCEL_MAX) curve = ACCEL_MAX;
+    }
+    const float strength = static_cast<float>(strengthPercent) / 100.0f;
+    return 1.0f + (curve - 1.0f) * strength;
+}
+
+// Circular scrolling. Positive `radians` is counter-clockwise, and a wheel's
+// positive is "away from the user" — scroll up — so counter-clockwise scrolls up
+// and clockwise scrolls down with no inversion at all. That is Natural for this
+// style, turning a wheel with the thumb; Reversed flips it.
+//
+// Vertical only: a circle has no horizontal component worth reporting, and
+// leaking one would scroll sideways on every lap.
+void TrackpadInput::UpdateRotaryScroll(float radians) {
+    // Ticks every active frame regardless of what follows, including a frame
+    // this call ends up doing nothing with — the dt it measures next time has
+    // to cover exactly the gap since the last turn, not since the last one
+    // that happened to clear the dead zone or the reference radius.
+    const float dt = ScrollDt();
+    if (radians == 0.0f) return;
+    if (m_scrollDir == ScrollDirection::Reversed) radians = -radians;
+
+    // Dead zone: small per-frame turns accumulate instead of acting
+    // immediately, so sensor jitter below the threshold never ticks the
+    // wheel but a slow, deliberate turn still arrives in full once enough of
+    // it has built up — the rotary equivalent of the pointer dead zone's
+    // "leave the reference uncommitted" trick, adapted because RotaryTracker
+    // always advances its own angle reference and cannot be made to wait.
+    m_rotaryAccum += radians;
+    if (std::fabs(m_rotaryAccum) < ROTARY_DEADZONE_RADIANS) return;
+    const float accumulated = m_rotaryAccum;
+    m_rotaryAccum = 0.0f;
+
+    // Speed from this frame's own raw turn rather than the accumulated one:
+    // the dead zone is small enough that the two rarely differ, and this
+    // avoids tracking a second "how long has this batch been building"
+    // timestamp just to divide by it.
+    const float omega = dt > 0.0f ? std::fabs(radians) / dt : 0.0f;
+    const float accel = SpeedAccelFactor(omega, ROTARY_NEUTRAL_SPEED, m_scrollAccel);
+
+    // The remainder carries in wheel units for the same reason UpdateScroll's
+    // does: the scale can change underneath it without what is banked changing
+    // meaning.
+    const float fy = accumulated * RotaryScale() * accel + m_scrollRemY;
+    const LONG  iy = static_cast<LONG>(fy);
+    m_scrollRemY = fy - static_cast<float>(iy);
+    if (iy == 0) return;
+
+    INPUT input{};
+    input.type         = INPUT_MOUSE;
+    input.mi.dwFlags   = MOUSEEVENTF_WHEEL;
+    input.mi.mouseData = static_cast<DWORD>(iy);
+    InputInjection::Send(input, "trackpad-rotary-scroll");
+}
+
 // Wheel events are quantised to WHEEL_DELTA notches, which is much coarser
 // than a pad frame's movement — so the same remainder-carry the pointer path
 // uses is what makes slow scrolling work at all here.
@@ -124,14 +336,22 @@ float TrackpadInput::ScrollScale() const {
 // Takes raw pad deltas (Y growing upward). Natural scrolling means the
 // content follows the finger, which is the opposite sense to the wheel's own
 // convention that positive is "away from the user" — hence the inversion
-// here rather than at the call site.
+// here rather than at the call site. The dead zone on these deltas is applied
+// by the caller (see Update()), which can leave m_prevX/Y uncommitted in a
+// way this function, handed only a delta, cannot.
 void TrackpadInput::UpdateScroll(int dx, int dy) {
+    const float dt = ScrollDt();
+    const float rawSpeed = dt > 0.0f
+        ? std::hypot(static_cast<float>(dx), static_cast<float>(dy)) / dt
+        : 0.0f;
+    const float accel = SpeedAccelFactor(rawSpeed, SWIPE_NEUTRAL_SPEED, m_scrollAccel);
+
     if (m_scrollDir == ScrollDirection::Natural) { dx = -dx; dy = -dy; }
 
     // The remainder carries in wheel units, which is what lets the scale change
     // underneath it — a slider moved mid-swipe, or the system setting changing
     // — without the part already banked meaning something different.
-    const float scale = ScrollScale();
+    const float scale = ScrollScale() * accel;
     const float fy = static_cast<float>(dy) * scale + m_scrollRemY;
     const float fx = static_cast<float>(dx) * scale + m_scrollRemX;
     const LONG  iy = static_cast<LONG>(fy);
@@ -338,19 +558,92 @@ void TrackpadInput::Update(const uint8_t* buf, size_t n, bool pressed) {
         return;
     }
 
+    // Circular scrolling follows the angle round the middle of the pad rather
+    // than where the finger has moved to, so it needs none of the position
+    // bookkeeping below. A press drops the reference as a lift does: pressing
+    // flattens the fingertip and slides its centroid, which from the middle of
+    // the pad reads as a turn that never happened.
+    if (m_mode == TrackpadMode::ScrollWheel && m_scrollStyle == ScrollStyle::Rotary) {
+        if (!touching || pressed) {
+            m_rotary.Reset();
+            // Whatever had been accumulating no longer describes a continuous
+            // turn once the reference itself is gone, and the dt measured
+            // across this gap on the next contact would be meaningless too.
+            m_rotaryAccum     = 0.0f;
+            m_haveScrollClock = false;
+        } else {
+            // Only against a previous frame of this same contact — the last
+            // position held from an earlier touch would read as a jump.
+            if (m_touching)
+                NoteJump(buf, n, static_cast<int>(x - m_prevX), static_cast<int>(y - m_prevY));
+            UpdateRotaryScroll(m_rotary.Step(x, y));
+        }
+        if (touching) { m_prevX = x; m_prevY = y; }
+        m_touching = touching;
+        return;
+    }
+
+    const bool isPointer = m_mode == TrackpadMode::MousePointer;
+
     if (touching && m_touching) {
         const int dxRaw = static_cast<int>(x - m_prevX);
         const int dyRaw = static_cast<int>(y - m_prevY);
         NoteJump(buf, n, dxRaw, dyRaw);
+
+        if (isPointer) {
+            // Below the dead zone, this frame's movement is the contact
+            // centroid settling as the fingertip presses down or lifts off —
+            // not a deliberate move. See kPointerDeadzoneDefault for why that
+            // specifically shows up here as a cursor jump. m_prevX/Y are left
+            // where they are rather than advanced to x/y, so the suppressed
+            // distance is not thrown away: it is still there on the next
+            // frame, and a genuinely slow drag still arrives in full once its
+            // accumulated travel clears the threshold, rather than every
+            // frame of it being eaten one at a time.
+            const double dist = std::hypot(static_cast<double>(dxRaw),
+                                           static_cast<double>(dyRaw));
+            if (dist < static_cast<double>(m_pointerDeadzone)) {
+                m_touching = touching;
+                return;
+            }
+            SampleFlingVelocity(dxRaw, dyRaw);
+        } else if (m_mode == TrackpadMode::ScrollWheel) {
+            // Same trick as the pointer dead zone just above, for the same
+            // settling and the same reason: left uncommitted rather than
+            // discarded, so a slow deliberate swipe still scrolls once its
+            // accumulated travel clears the threshold.
+            const double dist = std::hypot(static_cast<double>(dxRaw),
+                                           static_cast<double>(dyRaw));
+            if (dist < SCROLL_DEADZONE_UNITS) {
+                m_touching = touching;
+                return;
+            }
+        }
         if (dxRaw != 0 || dyRaw != 0) {
-            if (m_mode == TrackpadMode::MousePointer) {
+            if (isPointer) {
+                // Reuses the glide's own smoothed velocity estimate rather
+                // than computing a second one: SampleFlingVelocity just
+                // updated it above, and a smoothed speed makes for a steadier
+                // acceleration curve than this one frame's raw delta/dt would.
+                const float speed = m_haveFlingVel ? std::hypot(m_velX, m_velY) : 0.0f;
+                const float accel = SpeedAccelFactor(speed, POINTER_NEUTRAL_SPEED, m_pointerAccel);
                 // Pad Y grows upward, screen Y grows downward.
-                UpdatePointer(dxRaw, -dyRaw);
+                UpdatePointer(dxRaw, -dyRaw, accel);
             } else {
                 // Raw deltas — UpdateScroll owns the direction convention.
                 UpdateScroll(dxRaw, dyRaw);
             }
         }
+    } else if (isPointer && touching) {
+        // Fresh press (touching, but wasn't last frame): any glide from a
+        // previous touch stops here, and the speed estimate starts over
+        // rather than carrying a flick in from before this one.
+        m_flinging         = false;
+        m_haveFlingVel     = false;
+        m_haveInertiaClock = false;
+    } else if (isPointer && !touching) {
+        if (m_touching) StartFling();       // this frame is the lift
+        else if (m_flinging) StepFling();   // coasting, no finger down
     }
 
     if (touching) { m_prevX = x; m_prevY = y; }

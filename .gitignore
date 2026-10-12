@@ -32,3 +32,5 @@ src/probe/HapticTester.cpp
 
 # Built installers and packaged output
 Output/
+
+.idea
